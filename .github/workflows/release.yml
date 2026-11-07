@@ -1,0 +1,34 @@
+# Builds the Windows installer and attaches it to a GitHub Release when you push a version tag.
+#   git tag v0.1.0 && git push origin v0.1.0
+# The tag must match package.json "version" (v0.1.0 <-> "0.1.0"); the build fails if it doesn't.
+#
+# One-time setup in the GitHub repo: Settings -> Secrets and variables -> Actions -> Variables:
+#   MAIN_VITE_TWITCH_CLIENT_ID = your Twitch app's client id (public value, not a secret)
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          [ "refs/tags/v$v" = "$GITHUB_REF" ] || { echo "Tag $GITHUB_REF does not match package.json version $v"; exit 1; }
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          MAIN_VITE_TWITCH_CLIENT_ID: ${{ vars.MAIN_VITE_TWITCH_CLIENT_ID }}
+      - run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

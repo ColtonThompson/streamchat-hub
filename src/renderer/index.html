@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  renderer/index.html   (the page the window loads)
+
+  WHAT: The single HTML page of the app. React fills <div id="root"> (see src/main.tsx).
+
+  SECURITY: The Content-Security-Policy below is a safety net that limits what the page may load:
+    - default-src 'self'    scripts, fonts etc. only from the app itself
+    - img-src ... https:    emote and badge images may come from any https site (7TV, Twitch CDN...)
+    - img-src ... data:     the mock adapter's inline placeholder emotes
+    - style-src 'unsafe-inline'  React sets some styles inline
+  If you add a feature that loads something from another site (fonts, videos, an API call from the UI),
+  you must allow it here or the browser will silently block it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>StreamChat Hub</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

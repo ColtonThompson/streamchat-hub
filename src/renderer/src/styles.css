@@ -1,0 +1,459 @@
+/*
+ * renderer/src/styles.css   (all of the app's styling)
+ *
+ * HOW TO READ THIS FILE
+ *   Components don't contain styles; they set class names and `data-*` attributes, and the rules here
+ *   react to them. Example: MessageRow renders <div class="msg" data-event="raid">, and the rule
+ *   `.msg[data-event]` below gives it its tinted event look. To restyle something, find its class here.
+ *
+ * COLOURS: all chrome colours come from CSS variables (`--bg`, `--text`, ...). The `:root` block below
+ *   holds the DEFAULTS (the Plum theme); at runtime the chosen theme overwrites them (see
+ *   src/lib/themes.ts, which is where to edit a built-in theme's colours). So never hard-code a colour
+ *   for text, borders or backgrounds in this file: use a variable, or the theme switcher will miss it.
+ *   Platform and event colours are NOT theme variables; they live in src/lib/platforms.ts and
+ *   src/lib/events.ts and arrive as per-row variables (--accent, --event).
+ *
+ * ORDER MATTERS: where two rules could both apply, the one that appears LATER wins (when they are
+ *   equally specific). Rows are built up in layers: base look -> alternate shade -> hover -> special
+ *   kinds (events, removed, bits). Keep that order when adding rules.
+ *
+ * SECTIONS
+ *   1. Theme variables         5. Message rows (base, shading, hover)
+ *   2. Page and layout         6. Rich content (emotes, badges, links)
+ *   3. Top bar and controls    7. Special rows (events, mod notes, removed, bits)
+ *   4. Account + channel box   8. Mod toolbar, toast, composer
+ *   9. Settings panel         10. Timestamps
+ */
+
+/* ============================================================================================
+   1. THEME VARIABLES   defaults = the Plum theme; the active theme overrides them at runtime
+   ============================================================================================ */
+:root {
+  /* One line per variable the themes define (list: THEME_VAR_NAMES in src/lib/themes.ts). */
+  --bg: #15121d;            /* window background */
+  --panel: #1d1928;         /* raised surfaces: inputs, buttons, toolbars */
+  --line: #2b2639;          /* borders and dividers */
+  --text: #e9e4f3;          /* main text */
+  --muted: #8d86a3;         /* secondary text */
+  --accent-default: #9b6bff;/* the app's own accent (buttons, focus rings) */
+  --on-accent: #14111b;     /* text drawn ON the accent colour */
+  --link: #8ecbff;          /* links in chat */
+  --ok: #7ddf9a;            /* "good" green text */
+  --danger-text: #ff8a8f;   /* error text */
+  --danger-soft: #5b2230;   /* soft red background (hover on dangerous buttons) */
+  --danger-border: #7a2e3a; /* red border (error toast) */
+  --placeholder: #5f5977;   /* placeholder text in inputs */
+  --shadow: #00000088;      /* drop shadows */
+  /* The two alternating message shades, DERIVED from the colours above so every theme gets them free. */
+  --row-a: var(--bg);
+  --row-b: color-mix(in srgb, var(--panel) 80%, var(--bg));
+  color-scheme: dark;       /* makes scrollbars and form controls dark too (themes set this too) */
+}
+
+/* ============================================================================================
+   2. PAGE AND LAYOUT
+   ============================================================================================ */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 'Figtree Variable', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;        /* UI chrome isn't selectable; the feed re-enables it (see .feed) */
+}
+
+/* The app is a vertical stack: title bar, top bar, feed (takes the remaining space), toast, composer. */
+.app { position: relative; display: flex; flex-direction: column; height: 100%; } /* position: anchors the settings overlay */
+
+/* The strip along the top. `-webkit-app-region: drag` lets you move the window by grabbing it. The
+   native minimise/maximise/close buttons are drawn over the right side by Electron. */
+.titlebar {
+  height: 40px; flex: none;
+  display: flex; align-items: center; padding-left: 16px;
+  font-weight: 600; font-size: 13px; color: var(--muted);
+  -webkit-app-region: drag;
+}
+
+/* ============================================================================================
+   3. TOP BAR AND CONTROLS
+   ============================================================================================ */
+.bar {
+  flex: none; display: flex; flex-direction: column; gap: 10px;
+  padding: 4px 12px 12px; border-bottom: 1px solid var(--line);
+}
+.chips, .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Platform chips and tool buttons share a base look. */
+.chip, .tool {
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--muted); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 11px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.chip:hover, .tool:hover { color: var(--text); }
+.chip:focus-visible, .tool:focus-visible, .jump:focus-visible { outline: 2px solid var(--accent, var(--accent-default)); outline-offset: 2px; }
+
+/* The status dot inside a chip. Which state applies is set by data-state; `--accent` is the platform colour. */
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.chip[data-on='true'] { color: var(--text); border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.chip[data-state='connected'] .chip-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.chip[data-state='connecting'] .chip-dot { background: var(--accent); animation: pulse 1s infinite; }
+.chip[data-state='error'] .chip-dot { background: #ff5a5f; }
+
+.tool { border-radius: 8px; font-weight: 500; }
+.tool[data-on='true'] { color: var(--text); border-color: var(--accent-default); }
+
+@keyframes pulse { 50% { opacity: .25; } }
+
+/* ============================================================================================
+   4. ACCOUNT ROW AND CHANNEL BOX
+   ============================================================================================ */
+.account { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 12.5px; color: var(--muted); }
+.account strong { color: var(--text); }
+.account .code { font-size: 14px; letter-spacing: .08em; color: var(--accent-default); user-select: text; } /* the sign-in code: selectable so it can be copied */
+.account-ok { font-size: 12px; font-weight: 600; color: var(--ok); }
+.account .setting-help { flex-basis: 100%; }
+.account-error, .composer-error { font-size: 12px; color: var(--danger-text); margin: 0; }
+.account-note { margin: 0; font-size: 12px; color: var(--muted); }
+.account-note code { color: var(--text); }
+
+.channels { display: flex; flex-direction: column; gap: 5px; }
+.channels-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.channels-input {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+  user-select: text;
+}
+.channels-input::placeholder { color: var(--placeholder); }
+.channels-input:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.channels-error { font-size: 12px; color: var(--danger-text); }
+
+/* ============================================================================================
+   5. MESSAGE ROWS   base look, alternating shade, hover
+   ============================================================================================ */
+.feed { position: relative; flex: 1; min-height: 0; user-select: text; } /* min-height:0 lets the list scroll instead of growing */
+
+/* One row. `--row-bg` is the row's background colour; later rules just change this variable, and
+   `background` reads it, so shading, hover and event tints all combine cleanly. */
+.msg {
+  --row-bg: var(--row-a);
+  position: relative;       /* anchor for the hover toolbar (section 8) */
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 6px 12px 6px 10px;
+  background: var(--row-bg);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 70%, transparent); /* platform colour stripe */
+}
+.msg[data-alt='1'] { --row-bg: var(--row-b); }  /* every other row is the lighter shade */
+.msg:hover { background: color-mix(in srgb, var(--accent) 9%, var(--row-bg)); } /* a faint platform tint on hover */
+.msg[data-highlight='super'] { background: color-mix(in srgb, #ffd166 14%, var(--row-bg)); border-left-color: #ffd166; } /* YouTube super chat */
+
+/* The small coloured square with the platform's letters. */
+.msg-platform {
+  flex: none; margin-top: 2px; width: 20px; height: 20px; border-radius: 6px;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 800; color: #14111b; background: var(--accent);
+}
+.msg-body { min-width: 0; overflow-wrap: anywhere; } /* min-width:0 + overflow-wrap: long words wrap instead of widening the row */
+.author { font-weight: 700; margin-right: 8px; }
+.chan-tag { margin-right: 6px; font-size: 11px; font-weight: 600; color: var(--muted); } /* "#channel" when reading several */
+.msg[data-action='true'] .text { font-style: italic; } /* "/me" messages */
+
+/* "Jump to latest" button, shown when scrolled up. */
+.jump {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  font: inherit; font-weight: 600; font-size: 12.5px; color: var(--on-accent);
+  background: var(--accent-default); border: 0; border-radius: 999px;
+  padding: 7px 16px; cursor: pointer; box-shadow: 0 6px 20px var(--shadow);
+}
+
+.empty { flex: 1; display: grid; place-content: center; text-align: center; color: var(--muted); padding: 24px; }
+.empty-title { color: var(--text); font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+.empty p { margin: 0; }
+
+/* ============================================================================================
+   6. RICH CONTENT   emotes, badges, links
+   ============================================================================================ */
+.emote { height: 1.7em; width: auto; vertical-align: middle; margin: -3px 1px; }
+.emote-fallback { color: var(--muted); font-style: italic; } /* shown as text if an emote image fails to load */
+.badge-img { height: 1.15em; width: auto; margin-right: 4px; vertical-align: -3px; }
+.badge {                  /* text badge pill, used until/unless a badge image is available */
+  display: inline-block; margin-right: 5px; padding: 0 5px;
+  font-size: 10px; font-weight: 700; border-radius: 4px; vertical-align: 1px;
+  background: var(--line); color: var(--muted);
+}
+.text a { color: var(--link); }
+/* @mention chip. Soft tint for others; solid accent when the mention is of the signed-in user. */
+.mention {
+  display: inline-block; padding: 0 6px; margin: 0 1px; border-radius: 999px;
+  font-weight: 600; line-height: 1.5;
+  background: color-mix(in srgb, var(--accent-default) 24%, transparent);
+  color: var(--text);
+}
+.mention[data-me='true'] { background: var(--accent-default); color: var(--on-accent); }
+
+/* Zero-width emotes (7TV / BTTV): the wrapper is the size of the base emote; overlays sit on top of it. */
+.emote-stack { position: relative; display: inline-block; vertical-align: middle; margin: -3px 1px; }
+.emote-stack .emote { margin: 0; vertical-align: top; }
+.emote.overlay { position: absolute; left: 50%; top: 0; height: 100%; transform: translateX(-50%); }
+
+/* ============================================================================================
+   7. SPECIAL ROWS   events, moderation notes, removed messages, bits
+   ============================================================================================ */
+
+/* Channel events (subs, gifts, raids, announcements): `--event` is set per row from lib/events.ts. */
+.msg[data-event] { --row-bg: color-mix(in srgb, var(--event) 11%, var(--row-a)); border-left: 4px solid var(--event); padding-left: 9px; }
+.msg[data-event][data-alt='1'] { --row-bg: color-mix(in srgb, var(--event) 11%, var(--row-b)); }
+.event-tag {              /* the coloured label pill: "Sub", "Raid"... */
+  display: inline-block; margin-right: 8px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; color: #14111b; background: var(--event); vertical-align: 1px;
+}
+.event-title { font-weight: 700; }
+.event-msg { margin-top: 3px; } /* the viewer's attached message, under the title */
+
+/* Moderation notes ("X was timed out"): deliberately quiet, so they override the event tint above. */
+.msg[data-event='moderation'], .msg[data-event='notice'] { --row-bg: var(--row-a); border-left-color: var(--line); padding-top: 3px; padding-bottom: 3px; }
+.msg[data-event='moderation'][data-alt='1'], .msg[data-event='notice'][data-alt='1'] { --row-bg: var(--row-b); }
+.event-note { font-size: 12.5px; font-style: italic; color: var(--muted); }
+
+/* Removed (deleted / timed out / banned) messages. Rows are clickable to peek (role="button"). */
+.msg[role='button'] { cursor: pointer; }
+.msg[data-removed='true'] .author { color: var(--muted) !important; } /* !important: the author colour is set inline by the component */
+.msg[data-removed='true'] .badge-img { opacity: .5; }
+.removed-note { color: var(--muted); font-style: italic; }
+.struck { text-decoration: line-through; opacity: .6; } /* the original text once revealed */
+
+/* Bits (cheers): a tint plus a pill showing the amount. */
+.msg[data-highlight='bits'] { background: color-mix(in srgb, #9b6bff 15%, var(--row-bg)); }
+.bits-pill {
+  display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; color: #14111b; background: #b794ff; vertical-align: 1px;
+}
+/* YouTube Super Chat amount. --tier is YouTube's colour for that amount (set inline); gold if absent. */
+.super-pill {
+  display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; color: #14111b; background: var(--tier, #ffd166); vertical-align: 1px;
+}
+/* Channel boxes: one per platform that can read chat; side by side when there is room. */
+.channel-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.channel-row .channels { flex: 1 1 220px; }
+
+/* ============================================================================================
+   8. MOD TOOLBAR, TOAST, COMPOSER
+   ============================================================================================ */
+
+/* Hover toolbar (components/ModToolbar.tsx). Hidden until its row is hovered or keyboard-focused. */
+.mod-toolbar {
+  position: absolute; top: 2px; right: 8px; z-index: 2;
+  display: none; align-items: center; gap: 2px; padding: 3px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+.msg:hover .mod-toolbar, .msg:focus-within .mod-toolbar { display: flex; }
+.mod-btn {
+  font: inherit; font-size: 11.5px; font-weight: 700; color: var(--muted);
+  background: transparent; border: 0; border-radius: 5px; padding: 3px 8px; cursor: pointer;
+}
+.mod-btn:hover { color: var(--text); background: var(--line); }
+.mod-btn:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.mod-btn:disabled { opacity: .5; cursor: default; }
+.mod-btn[data-danger='true']:hover { background: var(--danger-soft); color: var(--danger-text); }
+.mod-btn[data-armed='true'] { background: #c0364b; color: #fff; } /* the "Confirm ban" state */
+.mod-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--line); }
+
+/* Toast (components/Toast.tsx): a short notice above the message box. */
+.toast {
+  flex: none; margin: 0 12px 8px; padding: 8px 12px; border-radius: 8px;
+  font-size: 12.5px; background: var(--panel); border: 1px solid var(--line);
+}
+.toast[data-kind='error'] { border-color: var(--danger-border); color: var(--danger-text); }
+
+/* Message box (components/Composer.tsx). */
+.composer { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; gap: 6px; }
+.composer-row { display: flex; gap: 8px; }
+.composer-input, .composer-target {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; user-select: text;
+}
+.composer-input { flex: 1; min-width: 0; }
+.composer-input::placeholder { color: var(--placeholder); }
+.composer-input:disabled { opacity: .6; }
+.composer-input:focus-visible, .composer-target:focus-visible, .composer-send:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.composer-send {
+  font: inherit; font-weight: 700; color: var(--on-accent); background: var(--accent-default);
+  border: 0; border-radius: 8px; padding: 0 16px; cursor: pointer;
+}
+.composer-send:disabled { opacity: .4; cursor: default; }
+
+/* ============================================================================================
+   9. SETTINGS PANEL   (components/settings/*)
+   A full-window sheet drawn over the chat, starting just below the 40px title bar.
+   ============================================================================================ */
+.settings {
+  position: absolute; inset: 40px 0 0 0; z-index: 20;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+}
+.settings-head { display: flex; align-items: center; justify-content: space-between; padding: 0 16px 10px; }
+.settings-title { margin: 0; font-size: 16px; font-weight: 700; }
+.settings-close {
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 12px; cursor: pointer;
+}
+.settings-close:hover { color: var(--text); }
+
+/* Tabs. The selected tab gets an accent underline; `margin-bottom: -1px` lets it overlap the divider. */
+.settings-tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.settings-tab {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted);
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 12px; margin-bottom: -1px; cursor: pointer;
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent-default); }
+
+/* The scrolling content area. `min-height: 0` lets it scroll instead of stretching the panel. */
+.settings-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 18px 16px 24px; display: flex; flex-direction: column; gap: 24px;
+  user-select: text;
+}
+.setting { display: flex; flex-direction: column; gap: 10px; }
+.setting-title { margin: 0; font-size: 14px; font-weight: 700; }
+.setting-help { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+/* Keyboard focus ring shared by every settings control. */
+.settings-close:focus-visible, .settings-tab:focus-visible, .theme-card:focus-visible,
+.segmented button:focus-visible, .btn-accent:focus-visible, .term button:focus-visible,
+.check input:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 2px; }
+
+/* A row of mutually exclusive choices, e.g. Off / 12-hour / 24-hour. */
+.segmented { display: inline-flex; align-self: flex-start; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.segmented button { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); background: transparent; border: 0; padding: 6px 14px; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-checked='true'] { background: var(--accent-default); color: var(--on-accent); }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent-default); }
+.check input:disabled { cursor: default; }
+
+/* Theme cards. The preview is drawn with each theme's OWN colours via inline styles. */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.theme-card {
+  font: inherit; text-align: left; color: var(--text);
+  background: var(--panel); border: 2px solid var(--line); border-radius: 10px;
+  padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 6px;
+}
+.theme-card:hover { border-color: color-mix(in srgb, var(--accent-default) 50%, var(--line)); }
+.theme-card[aria-checked='true'] { border-color: var(--accent-default); }
+.theme-swatch { display: flex; height: 46px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.theme-swatch span { flex: 1; }
+.theme-swatch .swatch-main { flex: 3; display: grid; place-items: center; font-weight: 800; font-size: 15px; }
+.theme-name { font-size: 13px; font-weight: 700; }
+.theme-desc { font-size: 11.5px; line-height: 1.3; color: var(--muted); }
+
+/* Blacklist editor. The input reuses `.channels-input`; the Add button is an accent button. */
+.term-input-row { display: flex; gap: 8px; }
+.term-input { flex: 1; min-width: 0; }
+.btn-accent {
+  font: inherit; font-weight: 700; color: var(--on-accent); background: var(--accent-default);
+  border: 0; border-radius: 8px; padding: 0 16px; cursor: pointer;
+}
+.term-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.term {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 3px 4px 3px 10px; font-size: 12.5px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+}
+.term span { overflow-wrap: anywhere; }
+.term button {
+  width: 20px; height: 20px; flex: none; border: 0; border-radius: 50%;
+  font: inherit; line-height: 1; color: var(--muted); background: transparent; cursor: pointer;
+}
+.term button:hover { color: var(--text); background: var(--line); }
+.term-clear { align-self: flex-start; }
+
+/* One card per platform on the Accounts tab. `--accent` is that platform's colour. */
+.account-card {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px;
+}
+.account-card-title { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.account-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+/* ============================================================================================
+   10. TIMESTAMPS   (the optional time at the start of each row; shown via Settings -> Chat)
+   ============================================================================================ */
+.msg-time {
+  margin-right: 8px; font-size: 11.5px; white-space: nowrap; color: var(--muted);
+  font-variant-numeric: tabular-nums; /* equal-width digits so times line up in a column */
+}
+
+/* ============================================================================================
+   11. ACTIVITY   live poll and prediction cards above the feed (components/ActivityPanel.tsx)
+   ============================================================================================ */
+/* The panel takes no space unless a card is showing (the component renders nothing otherwise). It never takes
+   more than ~45% of the window and scrolls if several cards are open at once. */
+.activity-panel {
+  flex: none; max-height: 45%; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--bg);
+}
+/* --c is the card's accent: blue for polls, pink for predictions. */
+.activity {
+  --c: var(--accent-default);
+  border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 10px;
+  background: var(--panel); padding: 8px 10px 10px;
+}
+.activity[data-kind='poll'] { --c: #38bdf8; }
+.activity[data-kind='prediction'] { --c: #f472b6; }
+.activity[data-status='canceled'], .activity[data-status='archived'] { opacity: .75; }
+.activity-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.activity-tag { font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--c); }
+.activity-status { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.activity-close {
+  font: inherit; font-size: 16px; line-height: 1; color: var(--muted);
+  background: none; border: 0; border-radius: 6px; padding: 0 6px; cursor: pointer;
+}
+.activity-close:hover { color: var(--text); background: var(--line); }
+.activity-close:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.activity-title { margin: 4px 0 8px; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.activity-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+/* One choice/outcome. The coloured bar is a ::before whose width is --pct (set inline by the component). */
+.activity-row {
+  --bar: var(--c);
+  position: relative; display: flex; justify-content: space-between; gap: 10px;
+  padding: 4px 8px; border-radius: 6px; overflow: hidden; font-size: 12.5px;
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+}
+.activity-row::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: var(--pct);
+  background: color-mix(in srgb, var(--bar) 32%, transparent); transition: width .4s ease;
+}
+.activity-row[data-leading='true']::before, .activity-row[data-winner='true']::before { background: color-mix(in srgb, var(--bar) 62%, transparent); }
+.activity-row[data-color='blue'] { --bar: #387aff; }   /* Twitch's two prediction colours */
+.activity-row[data-color='pink'] { --bar: #f5009b; }
+.activity-row > span { position: relative; }           /* draw the text above the bar */
+.activity-label { font-weight: 600; overflow-wrap: anywhere; }
+.activity-value { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.activity-row[data-leading='true'] .activity-value, .activity-row[data-winner='true'] .activity-value { color: var(--text); }
+.activity-foot { margin: 6px 0 0; font-size: 11.5px; color: var(--muted); }
+
+/* ---- 12. UPDATE BANNER (shown only when a downloaded update is waiting) ---- */
+.update-banner {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 6px 12px;
+  font-size: 12.5px; color: var(--text);
+  background: color-mix(in srgb, var(--accent-default) 16%, var(--panel));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-default) 45%, transparent);
+}
+.update-banner span { flex: 1 1 auto; }
+.tool:disabled { opacity: .5; cursor: default; }
+
+/* People who set "reduce motion" in their OS get no animations or transitions. */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

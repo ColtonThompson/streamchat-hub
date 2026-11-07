@@ -1,0 +1,30 @@
+# electron-builder.yml  (how the installer is built)
+#
+# Build locally:   npm run dist        -> release/StreamChat Hub Setup <version>.exe
+# Publish (CI):    push a tag like v0.1.0 (see .github/workflows/release.yml)
+#
+# CHECK BEFORE YOUR FIRST RELEASE: appId (below), the icon (build/icon.png is a PLACEHOLDER),
+# and the "repository" field in package.json (the updater downloads from that GitHub repo).
+appId: org.nightgames.streamchathub
+productName: StreamChat Hub
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asar: true
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # No code-signing certificate is configured: Windows SmartScreen will warn on first run.
+  # Updates still work. See "Releasing" in README.md for signing options.
+nsis:
+  oneClick: true          # no wizard: double-click and it installs
+  perMachine: false       # per-user install: no admin prompt, and silent updates work
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-Setup-${version}.${ext}
+publish:
+  provider: github        # owner/repo are read from package.json "repository"
+  releaseType: release
