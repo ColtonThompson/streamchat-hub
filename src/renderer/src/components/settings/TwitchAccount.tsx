@@ -10,14 +10,18 @@
  *                      [Enable ...] button that re-authorizes with the extra permissions:
  *                        moderation tools (delete / time out / ban)
  *                        polls & predictions (live cards for YOUR channel's polls and predictions)
+ *                        go-live alerts (desktop notification when a channel you follow goes live)
  *
  * All the real work happens in the main process (main/twitch/auth.ts). This component only reads
  * `auth` from the store and calls `window.api.auth.*`.
  */
 import { useChatStore } from '../../store/chatStore'
+import { useSettingsStore } from '../../store/settingsStore'
 
 export function TwitchAccount() {
   const auth = useChatStore((s) => s.auth)
+  const liveAlerts = useSettingsStore((s) => s.liveAlerts)
+  const setLiveAlerts = useSettingsStore((s) => s.setLiveAlerts)
 
   if (!auth.configured) {
     return (
@@ -63,6 +67,29 @@ export function TwitchAccount() {
             Polls and predictions show for your own channel: add <strong>{auth.login}</strong> to the Twitch box and switch
             Twitch on.
           </p>
+        )}
+        {auth.canReadFollows ? (
+          <>
+            <label className="check">
+              <input type="checkbox" checked={liveAlerts} onChange={(e) => setLiveAlerts(e.target.checked)} />
+              Notify me when channels I follow go live
+            </label>
+            <button
+              className="tool"
+              title="Shows a sample notification so you can check that Windows displays them."
+              onClick={() => void window.api.testNotification()}
+            >
+              Send test notification
+            </button>
+          </>
+        ) : (
+          <button
+            className="tool"
+            title="Asks Twitch for permission to see which channels you follow are live, so a desktop notification can tell you who just went live and what they're playing."
+            onClick={() => void window.api.auth.login({ follows: true })}
+          >
+            Enable go-live alerts
+          </button>
         )}
         {auth.error && <span className="account-error">{auth.error}</span>}
       </div>

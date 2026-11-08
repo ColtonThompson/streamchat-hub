@@ -253,6 +253,8 @@ export interface LoginOptions {
   moderation?: boolean
   /** Read the polls and predictions of your own channel. */
   polls?: boolean
+  /** See which channels you follow are live (go-live notifications). */
+  follows?: boolean
 }
 
 export interface AuthState {
@@ -266,6 +268,8 @@ export interface AuthState {
   canModerate?: boolean
   /** True when the token includes the permissions needed to read your channel's polls and predictions. */
   canReadPolls?: boolean
+  /** True when the token includes the permission to see which followed channels are live. */
+  canReadFollows?: boolean
   /** While `pending`: the code the user types in at twitch.tv/activate. */
   userCode?: string
   verificationUri?: string
@@ -306,6 +310,16 @@ export type UpdateState =
   | { status: 'ready'; version: string; next: string }
   | { status: 'error'; version: string; message: string }
 
+/** A channel you follow that is live right now (for the Twitch box's suggestions). */
+export interface LiveChannel {
+  login: string
+  name: string
+  /** Category being streamed ("" if none). */
+  game: string
+  title: string
+  viewers: number
+}
+
 export interface HubApi {
   /** Subscribe to new rows and changes. Returns an "unsubscribe" function. */
   onBatch(cb: (items: FeedItem[]) => void): () => void
@@ -313,6 +327,10 @@ export interface HubApi {
   setPlatformEnabled(platform: Platform, enabled: boolean, channels: string[]): Promise<void>
   setChannels(platform: Platform, channels: string[]): Promise<void>
   setAlwaysOnTop(value: boolean): Promise<void>
+  /** Turn desktop notifications for followed channels going live on or off. */
+  setLiveAlerts(value: boolean): Promise<void>
+  /** Show a sample desktop notification. Resolves false if the system can't show notifications. */
+  testNotification(): Promise<boolean>
   /** Recolour the native title-bar area to match the current theme. */
   setWindowTheme(theme: WindowTheme): Promise<void>
   sendChat(platform: Platform, channel: string, text: string): Promise<ActionResult>
@@ -325,6 +343,11 @@ export interface HubApi {
     cancel(): Promise<void>
     logout(): Promise<void>
     onState(cb: (state: AuthState) => void): () => void
+  }
+  /** Which followed Twitch channels are live (empty until the go-live permission is granted). */
+  liveFollows: {
+    get(): Promise<LiveChannel[]>
+    onChange(cb: (live: LiveChannel[]) => void): () => void
   }
   updates: {
     get(): Promise<UpdateState>
@@ -346,6 +369,10 @@ export const IPC = {
   toggle: 'adapter:toggle',
   channels: 'adapter:channels',
   onTop: 'window:always-on-top',
+  liveAlerts: 'alerts:live',
+  alertsTest: 'alerts:test',
+  liveGet: 'follows:live',
+  liveChanged: 'follows:live-changed',
   windowTheme: 'window:theme',
   send: 'chat:send',
   moderate: 'chat:moderate',

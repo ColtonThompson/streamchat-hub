@@ -20,14 +20,33 @@
  *
  * CHANGE IT WHEN: you add a new UI -> main request (add a handler below) or change window behaviour.
  */
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
 import { parseSources } from '../shared/channels'
-import { IPC, type LoginOptions, type ModerationCommand, type Platform, type WindowTheme } from '../shared/types'
+import { IPC, type LiveChannel, type LoginOptions, type ModerationCommand, type Platform, type WindowTheme } from '../shared/types'
 import { MessageBus } from './bus'
+import { APP_ID } from './appId'
+import { LiveWatcher } from './livewatch'
 import { TwitchAuth } from './twitch/auth'
+import { Helix } from './twitch/helix'
 import { UpdateService } from './updater'
 import { autoUpdater } from 'electron-updater'
+
+/** Show a desktop notification. Returns false when the OS can't show any. Clicking opens `url` in the browser. */
+function showNotification(title: string, body: string, url?: string): boolean {
+  if (!Notification.isSupported()) {
+    console.warn('[alerts] desktop notifications are not supported on this system')
+    return false
+  }
+  const n = new Notification({ title, body })
+  n.on('click', () => {
+    if (url) void shell.openExternal(url) // links never open inside the app window
+  })
+  n.on('failed', (_e, error) => console.warn('[alerts] Windows refused the notification:', error))
+  n.show()
+  console.log(`[alerts] showed: ${title} - ${body}`)
+  return true
+}
 
 /** The active bus. Kept at module level so handlers registered once can reach it. */
 let bus: MessageBus | undefined
@@ -62,6 +81,37 @@ function createWindow(): void {
   void twitchAuth.init() // restore a saved login, if any (runs in the background)
   bus = new MessageBus(win, twitchAuth)
 
+  // --- go-live notifications for followed channels (needs the "go-live alerts" permission) ---
+  // Runs while signed in with the permission granted. Notifications additionally need the Settings
+  // checkbox on; until the UI reports it (a moment after launch) they stay off, so nothing pops up by surprise.
+  let liveAlertsWanted = false
+  const followHelix = new Helix(twitchAuth)
+  // The same check also feeds the suggestions in the Twitch box, so it runs whenever the permission is
+  // granted; the Settings checkbox only decides whether notifications are shown.
+  let liveList: LiveChannel[] = []
+  let liveListKey = '[]'
+  const liveWatch = new LiveWatcher({
+    fetchLive: async () => (twitchAuth.userId ? followHelix.getFollowedStreams(twitchAuth.userId) : undefined),
+    selfId: () => twitchAuth.userId,
+    alertsOn: () => liveAlertsWanted,
+    announce: (a) => showNotification(a.title, a.body, a.url),
+    onList: (live) => {
+      liveList = live
+        .map((s) => ({ login: s.login, name: s.name, game: s.game, title: s.title, viewers: s.viewers }))
+        .sort((a, b) => b.viewers - a.viewers)
+      const key = JSON.stringify(liveList)
+      if (key === liveListKey) return // unchanged: don't wake the UI every minute
+      liveListKey = key
+      if (!win.isDestroyed()) win.webContents.send(IPC.liveChanged, liveList)
+    }
+  })
+  const syncLiveWatch = (): void => {
+    const should = twitchAuth.canReadFollows && !!twitchAuth.userId
+    if (should && !liveWatch.active) liveWatch.start()
+    if (!should && liveWatch.active) liveWatch.stop()
+  }
+  const offLiveAuth = twitchAuth.onChange(syncLiveWatch)
+
   // --- app updates (only active in an installed build; in `npm run dev` it is switched off) ---
   const updates = new UpdateService({
     updater: autoUpdater,
@@ -90,7 +140,11 @@ function createWindow(): void {
     // Login runs until the user approves in the browser (minutes). Don't make the UI wait on it:
     // progress arrives through the IPC.authState push above. The options come from the UI, so only
     // real `true` values count.
-    void twitchAuth.login({ moderation: options?.moderation === true, polls: options?.polls === true })
+    void twitchAuth.login({
+      moderation: options?.moderation === true,
+      polls: options?.polls === true,
+      follows: options?.follows === true
+    })
   })
   ipcMain.handle(IPC.authCancel, () => twitchAuth.cancelLogin())
   ipcMain.handle(IPC.authLogout, () => twitchAuth.logout())
@@ -98,6 +152,13 @@ function createWindow(): void {
   ipcMain.handle(IPC.updatesGet, () => updates.getState())
   ipcMain.handle(IPC.updatesCheck, () => updates.check())
   ipcMain.handle(IPC.updatesInstall, () => updates.install())
+
+  ipcMain.handle(IPC.liveGet, () => liveList)
+  ipcMain.handle(IPC.alertsTest, () => showNotification('StreamChat Hub', 'Go-live alerts will look like this.'))
+  ipcMain.handle(IPC.liveAlerts, (_e, value: boolean) => {
+    liveAlertsWanted = value === true
+    syncLiveWatch()
+  })
 
   ipcMain.handle(IPC.onTop, (_e, value: boolean) => win.setAlwaysOnTop(value, 'floating'))
 
@@ -119,6 +180,8 @@ function createWindow(): void {
   win.on('closed', () => {
     offAuth()
     updates.dispose()
+    offLiveAuth()
+    liveWatch.stop()
     bus?.dispose()
     bus = undefined
     // Handlers are registered per window, so remove them (a re-opened window registers them again).
@@ -134,6 +197,9 @@ function createWindow(): void {
       IPC.updatesGet,
       IPC.updatesCheck,
       IPC.updatesInstall,
+      IPC.liveAlerts,
+      IPC.alertsTest,
+      IPC.liveGet,
       IPC.onTop,
       IPC.windowTheme
     ]
@@ -148,6 +214,10 @@ function createWindow(): void {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+// Windows needs an identity for notifications to show. Installed builds use the installer's id; in
+// development there is no installer, so use a stable id of its own.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? APP_ID : `${APP_ID}.dev`)
 
 app.whenReady().then(() => {
   createWindow()

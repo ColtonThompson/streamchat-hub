@@ -57,6 +57,7 @@ interface SettingsState extends Settings {
   setResolvedTheme: (id: ThemeId) => void
   setTimestamps: (mode: TimestampMode) => void
   setTimestampSeconds: (on: boolean) => void
+  setLiveAlerts: (on: boolean) => void
   /** Add a term to the blacklist. Duplicates are detected ignoring case. */
   addBlacklistTerm: (raw: string) => AddTermResult
   removeBlacklistTerm: (term: string) => void
@@ -81,6 +82,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
   setTimestamps: (timestamps) => set({ timestamps }),
   setTimestampSeconds: (timestampSeconds) => set({ timestampSeconds }),
+  setLiveAlerts: (liveAlerts) => set({ liveAlerts }),
 
   addBlacklistTerm: (raw) => {
     const term = normalizeTerm(raw)
@@ -104,7 +106,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 useSettingsStore.subscribe((state, prev) => {
   const a = pickSettings(state)
   const b = pickSettings(prev)
-  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist) return
+  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts) return
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(a))
   } catch {

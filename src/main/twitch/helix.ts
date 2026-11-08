@@ -21,6 +21,29 @@ export interface BadgeSet {
   versions: { id: string; image_url_2x: string; title?: string }[]
 }
 
+/** One live channel from /streams/followed. */
+export interface LiveStream {
+  userId: string
+  login: string
+  name: string
+  /** Category being streamed ("" when none is set). */
+  game: string
+  title: string
+  viewers: number
+  /** False for the rare non-"live" entries (e.g. a rerun): they are not announced. */
+  live: boolean
+}
+
+/** A failed Helix call; `status` lets callers react to 401/403 differently from a network blip. */
+export class HelixError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
 const API = 'https://api.twitch.tv/helix'
 
 export class Helix {
@@ -106,6 +129,43 @@ export class Helix {
       return { ok: false, error: item.drop_reason?.message ?? 'Twitch did not accept that message.' }
     }
     return { ok: true }
+  }
+
+  // ------------------------------------------------------------------------- followed streams
+
+  /**
+   * The channels the user follows that are live right now (with game and title). Needs scope
+   * `user:read:follows`. One call replaces watching every followed channel individually. Twitch
+   * returns up to 100 per page; we read at most 3 pages. Returns undefined when signed out and
+   * throws a HelixError on an HTTP error so the caller can tell "nobody is live" from "the lookup failed".
+   */
+  async getFollowedStreams(userId: string): Promise<LiveStream[] | undefined> {
+    const out: LiveStream[] = []
+    let cursor = ''
+    for (let page = 0; page < 3; page++) {
+      const res = await this.request(`/streams/followed?user_id=${encodeURIComponent(userId)}&first=100${cursor}`)
+      if (!res) return undefined
+      if (!res.ok) throw new HelixError(res.status, await this.describeFailure(res))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body: any = await res.json().catch(() => ({}))
+      const data: any[] = body.data ?? []
+      for (const s of data) {
+        if (!s?.user_id || !s.user_login) continue
+        out.push({
+          userId: String(s.user_id),
+          login: String(s.user_login),
+          name: String(s.user_name || s.user_login),
+          game: String(s.game_name ?? ''),
+          title: String(s.title ?? ''),
+          viewers: Number(s.viewer_count) || 0,
+          live: s.type === 'live'
+        })
+      }
+      const next = body.pagination?.cursor
+      if (!next || data.length < 100) break
+      cursor = `&after=${encodeURIComponent(next)}`
+    }
+    return out
   }
 
   // --------------------------------------------------------------------------- EventSub

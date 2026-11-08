@@ -1,7 +1,7 @@
 {
   "name": "streamchat-hub",
-  "version": "0.1.0-rc.1",
-  "description": "One merged chat for every platform you stream to",
+  "version": "0.2.0",
+  "description": "One merged chat for every platform you stream to or watch!",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -35,7 +35,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ColtonThompson/streamchat-hub.git"
+    "url": "https://github.com/ColtonThompson/streamchat-hub"
   },
   "author": "Nightleaf"
 }

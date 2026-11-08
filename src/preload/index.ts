@@ -40,6 +40,8 @@ const api: HubApi = {
   setPlatformEnabled: (platform, enabled, channels) => ipcRenderer.invoke(IPC.toggle, platform, enabled, channels),
   setChannels: (platform, channels) => ipcRenderer.invoke(IPC.channels, platform, channels),
   setAlwaysOnTop: (value) => ipcRenderer.invoke(IPC.onTop, value),
+  setLiveAlerts: (value) => ipcRenderer.invoke(IPC.liveAlerts, value),
+  testNotification: () => ipcRenderer.invoke(IPC.alertsTest),
   setWindowTheme: (theme) => ipcRenderer.invoke(IPC.windowTheme, theme),
   sendChat: (platform, channel, text) => ipcRenderer.invoke(IPC.send, platform, channel, text),
   moderate: (command) => ipcRenderer.invoke(IPC.moderate, command),
@@ -54,6 +56,16 @@ const api: HubApi = {
       const handler = (_e: unknown, state: Parameters<typeof cb>[0]) => cb(state)
       ipcRenderer.on(IPC.authState, handler)
       return () => ipcRenderer.removeListener(IPC.authState, handler)
+    }
+  },
+
+  // ---- followed channels that are live ------------------------------------------------------
+  liveFollows: {
+    get: () => ipcRenderer.invoke(IPC.liveGet),
+    onChange(cb) {
+      const handler = (_e: unknown, live: Parameters<typeof cb>[0]) => cb(live)
+      ipcRenderer.on(IPC.liveChanged, handler)
+      return () => ipcRenderer.removeListener(IPC.liveChanged, handler)
     }
   },
 

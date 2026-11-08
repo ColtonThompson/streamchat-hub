@@ -79,7 +79,9 @@ src/
       helix.ts            Twitch web API client: badges, send chat, delete/timeout/ban/unban, EventSub subscribe
       badges.ts           Attaches badge images to messages
       eventsub.ts         Twitch's second connection (WebSocket) for things chat doesn't carry; reconnects itself
+      (helix.ts also has getFollowedStreams, used by livewatch.ts)
       activity.ts         Poll/prediction events -> live card state + a few feed rows (pure, easy to test)
+    livewatch.ts        Every minute asks Twitch which followed channels are live; desktop notification for new ones
     updater.ts          Checks GitHub Releases for a newer version, downloads it, installs on restart
   preload/index.ts      Builds window.api (the only door between UI and main)
   renderer/
@@ -238,7 +240,7 @@ off in `npm run dev` (nothing is packaged).
 
 **Fill in once, before the first release**
 1. `package.json`: set `repository.url` to your GitHub repo (the updater downloads from there) and `author`.
-2. `electron-builder.yml`: change `appId` (e.g. `com.yourname.streamchathub`). Don't change it later:
+2. `electron-builder.yml`: change `appId` (e.g. `com.yourname.streamchathub`). Also change `APP_ID` in `src/main/appId.ts` to the same value (Windows notifications need them to match). Don't change it later:
    Windows treats a new id as a different app.
 3. Replace `build/icon.png` (a 512x512 PLACEHOLDER I generated) with your own, at least 256x256.
 4. Repo -> Settings -> Secrets and variables -> Actions -> **Variables**: add `MAIN_VITE_TWITCH_CLIENT_ID`
@@ -266,6 +268,27 @@ Check for updates (or wait). Expect "Downloading...", then the banner. This path
 install (More info -> Run anyway). Updates still work. To remove the warning you need a code-signing
 certificate (an EV/OV certificate, or Azure Trusted Signing); add it to `electron-builder.yml` under `win`
 and the CI secrets. macOS/Linux builds aren't set up (macOS auto-update additionally requires signing).
+
+---
+
+### Suggestions in the Twitch box
+
+With the go-live permission on, the Twitch channels box suggests followed channels that are live (game +
+viewers): type to filter, Tab takes the top match, Up/Down + Enter picks, Esc closes, or click the
+"N live" button for the whole list. Logic: `renderer/src/lib/suggest.ts`; the component:
+`ChannelInput.tsx`; the list comes from the same once-a-minute check as the notifications (`main/livewatch.ts`).
+Not yet checked visually in a real window, so tell me if the dropdown looks off.
+
+### Go-live notifications
+
+Settings -> Accounts -> **Enable go-live alerts** asks Twitch for the `user:read:follows` permission. After that
+a checkbox, "Notify me when channels I follow go live", turns the alerts on or off (saved in settings). While on,
+`main/livewatch.ts` calls Twitch's `/streams/followed` every minute and shows a Windows notification such as
+"PixelWitch is live - Playing Hades II · title"; clicking it opens the channel in your browser.
+It never announces streams that were already live when the app started, skips quick drop-and-return blips
+(10 min), and shows one summary if more than 3 go live at once. Kick isn't covered: there is no Kick adapter yet.
+Settings -> Accounts has a **Send test notification** button to check that Windows shows them, and the terminal (dev mode) logs `[livewatch]` / `[alerts]` lines for each check. Not tested against real Twitch from the build environment; if nothing appears, confirm the notification
+permission for the app in Windows Settings -> System -> Notifications (and Focus assist / Do not disturb).
 
 ---
 

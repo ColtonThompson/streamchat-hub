@@ -42,6 +42,8 @@ const MODERATION_SCOPES = ['moderator:manage:chat_messages', 'moderator:manage:b
  * user's own channel (the broadcaster), so this is for streamers watching their own stream.
  */
 const POLL_SCOPES = ['channel:read:polls', 'channel:read:predictions']
+/** Lets us ask "which channels I follow are live right now?" (for go-live notifications). */
+const FOLLOW_SCOPES = ['user:read:follows']
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -103,6 +105,11 @@ export class TwitchAuth {
     return POLL_SCOPES.every((s) => this.tokens?.scopes.includes(s))
   }
 
+  /** True when the token may list the live channels you follow. */
+  get canReadFollows(): boolean {
+    return FOLLOW_SCOPES.every((s) => this.tokens?.scopes.includes(s))
+  }
+
   /** The signed-in user's login name (lowercase), e.g. "pixelwitch". (Not `login`: that is the sign-in method.) */
   get loginName(): string | undefined {
     return this.tokens?.login
@@ -133,6 +140,7 @@ export class TwitchAuth {
         userId: this.tokens.userId,
         canModerate: this.canModerate,
         canReadPolls: this.canReadPolls,
+        canReadFollows: this.canReadFollows,
         error
       })
     } else {
@@ -172,6 +180,7 @@ export class TwitchAuth {
     const wanted = [...BASIC_SCOPES]
     if (options.moderation || this.canModerate) wanted.push(...MODERATION_SCOPES)
     if (options.polls || this.canReadPolls) wanted.push(...POLL_SCOPES)
+    if (options.follows || this.canReadFollows) wanted.push(...FOLLOW_SCOPES)
     const scopes = wanted.join(' ')
 
     try {

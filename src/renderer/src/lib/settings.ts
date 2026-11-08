@@ -25,13 +25,16 @@ export interface Settings {
   timestampSeconds: boolean
   /** Messages containing any of these (case-insensitive) are hidden. */
   blacklist: string[]
+  /** Desktop notification when a followed channel goes live (Twitch). */
+  liveAlerts: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'plum',
   timestamps: 'off',
   timestampSeconds: false,
-  blacklist: []
+  blacklist: [],
+  liveAlerts: true
 }
 
 export const MAX_BLACKLIST_TERMS = 200
@@ -70,10 +73,11 @@ export function sanitizeSettings(raw: unknown): Settings {
       if (blacklist.length >= MAX_BLACKLIST_TERMS) break
     }
   }
-  return { theme, timestamps, timestampSeconds, blacklist }
+  const liveAlerts = typeof r.liveAlerts === 'boolean' ? r.liveAlerts : DEFAULT_SETTINGS.liveAlerts
+  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts }
 }
 
 /** The fields that get saved (everything in `Settings`, nothing else from the store). */
 export function pickSettings(s: Settings): Settings {
-  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist }
+  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts }
 }

@@ -20,13 +20,19 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { Toast } from './components/Toast'
 import { subscribeToMain } from './store/chatStore'
+import { subscribeToLive } from './store/liveStore'
+import { useSettingsStore } from './store/settingsStore'
 import { useThemeSync } from './store/themeSync'
 import { subscribeToUpdates } from './store/updateStore'
 
 export default function App() {
   useEffect(() => subscribeToMain(), [])
   useEffect(() => subscribeToUpdates(), [])
+  useEffect(() => subscribeToLive(), [])
   useThemeSync()
+  // Tell the main process whether go-live notifications are wanted (at startup and whenever it changes).
+  const liveAlerts = useSettingsStore((s) => s.liveAlerts)
+  useEffect(() => void window.api.setLiveAlerts(liveAlerts), [liveAlerts])
 
   return (
     <div className="app">
