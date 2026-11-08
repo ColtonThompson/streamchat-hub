@@ -1,0 +1,7 @@
+{
+  // Type-checks the tests together with the app. Looser than the app's own settings: tests build
+  // lots of partial fake objects, so strict null/any checks would add noise rather than catch bugs.
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "strict": false, "noUnusedLocals": false, "noEmit": true, "types": ["node"] },
+  "include": ["../src", "./**/*.ts", "../vitest.config.ts"]
+}

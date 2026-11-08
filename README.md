@@ -90,7 +90,7 @@ src/
       main.tsx / App.tsx  UI entry and overall layout
       store/chatStore.ts  All UI state (Zustand): messages, platforms on/off, auth, toast...
       lib/                Small helpers: platform colours, event colours, moderation logic, @mentions
-      components/         PlatformBar, ChannelInput, AccountRow, ChatFeed, MessageRow,
+      components/         PlatformBar, ChannelInput, ChatFeed, MessageRow,
                           ModToolbar, Toast, Composer, ActivityPanel (poll/prediction cards),
                           UpdateBanner, settings/ (Appearance, Chat, Accounts, About tabs)
       styles.css          All styling (heavily commented; read its header)
@@ -289,6 +289,40 @@ It never announces streams that were already live when the app started, skips qu
 (10 min), and shows one summary if more than 3 go live at once. Kick isn't covered: there is no Kick adapter yet.
 Settings -> Accounts has a **Send test notification** button to check that Windows shows them, and the terminal (dev mode) logs `[livewatch]` / `[alerts]` lines for each check. Not tested against real Twitch from the build environment; if nothing appears, confirm the notification
 permission for the app in Windows Settings -> System -> Notifications (and Focus assist / Do not disturb).
+
+---
+
+## Testing
+
+```
+npm test              run every test once (also what CI runs)
+npm run test:watch    re-run tests as you edit
+npm run typecheck     type-checks the app AND the tests
+```
+
+Tests use [Vitest](https://vitest.dev) and live in `tests/`, mirroring `src/`:
+
+| Folder | What is covered |
+|---|---|
+| `tests/shared` | what the channel boxes accept (Twitch names, YouTube links/handles) |
+| `tests/main` | Twitch chat connection (fake WebSocket), IRC + message parsing, sign-in and token refresh (fake Twitch), Twitch API client, polls/predictions + EventSub, go-live watcher, emotes, YouTube (fake YouTube), auto-update service |
+| `tests/renderer` | chat store, @mentions + Tab completion, channel suggestions, moderation, blacklist, row shading, timestamps, colours/contrast, themes, settings validation |
+
+Nothing touches the network or real files. `vitest.config.ts` swaps two packages for fakes from
+`tests/stubs/`: `electron` (desktop shell) and `ws` (WebSockets). Tests that need time to pass use
+`tests/helpers/timers.ts` (`fastTimers` makes retry delays 100x shorter) instead of real waits.
+
+**Two styles of test.** Most files are ordinary `describe`/`it` blocks. Some behaviour is a story over time
+("YouTube goes live, a poll fails, the stream comes back..."), so those files use `scenario()`
+(`tests/helpers/scenario.ts`): it runs the story once and then registers one named test per `check(...)`, so a
+failure still says exactly which statement broke.
+
+**Add a test:** create `tests/<area>/<thing>.test.ts`, import what you are testing from `../../src/...`, use
+`chatMessage()` from `tests/helpers/factories.ts` for fake chat lines. If you fix a bug, add a test that
+fails without the fix.
+
+**Not covered:** the React components themselves (they would need a browser-like test environment such as
+jsdom plus Testing Library), `main/index.ts` window wiring, and the real YouTube/Twitch services.
 
 ---
 

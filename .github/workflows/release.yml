@@ -26,6 +26,7 @@ jobs:
           v="$(node -p "require('./package.json').version")"
           [ "refs/tags/v$v" = "$GITHUB_REF" ] || { echo "Tag $GITHUB_REF does not match package.json version $v"; exit 1; }
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
         env:
           MAIN_VITE_TWITCH_CLIENT_ID: ${{ vars.MAIN_VITE_TWITCH_CLIENT_ID }}
