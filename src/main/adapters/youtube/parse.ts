@@ -177,6 +177,8 @@ function timestampOf(r: Rec): number {
 interface Ctx {
   /** The stream's video id. Used as the message's `channelId` (what moderation events match on). */
   videoId: string
+  /** The channel's @handle or name, shown as the row's source tag (see ChatMessage.channelLabel). */
+  channelLabel?: string
   /** Look up a viewer's display name from an earlier message (used to word "X was removed" notes). */
   nameOf?: (authorId: string) => string | undefined
   /** Called with the name of any action or row kind we don't handle (so the adapter can log it). */
@@ -202,7 +204,7 @@ const IGNORED = new Set([
 ])
 
 function base(id: string, r: Rec, ctx: Ctx): Omit<ChatMessage, 'parts' | 'author'> {
-  return { id, platform: 'youtube', channelId: ctx.videoId, timestamp: timestampOf(r) }
+  return { id, platform: 'youtube', channelId: ctx.videoId, ...(ctx.channelLabel ? { channelLabel: ctx.channelLabel } : {}), timestamp: timestampOf(r) }
 }
 
 /** One chat row (the `item` inside `addChatItemAction`) -> a ChatMessage, or undefined if not shown. */

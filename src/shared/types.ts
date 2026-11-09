@@ -114,6 +114,12 @@ export interface ChatMessage {
   platform: Platform
   /** Which channel it came from. For Twitch: the channel login name, e.g. "summit1g". */
   channelId: string
+  /**
+   * A name for the source that people recognise, shown in the "where is this from" tag when several channels
+   * are read. YouTube's `channelId` is a video id (meaningless to read), so its rows carry the channel's
+   * @handle or name here. Absent for Twitch, where the channel login is already readable.
+   */
+  channelLabel?: string
   author: {
     /** The platform's user id (Twitch numeric id). Needed for timeouts and bans. */
     id?: string
@@ -324,6 +330,8 @@ export interface HubApi {
   /** Subscribe to new rows and changes. Returns an "unsubscribe" function. */
   onBatch(cb: (items: FeedItem[]) => void): () => void
   onStatus(cb: (platform: Platform, status: PlatformStatus) => void): () => void
+  /** The user pressed a chat-zoom shortcut (Ctrl +, Ctrl -, Ctrl 0). The main process spots the key press. */
+  onZoomKey(cb: (action: 'in' | 'out' | 'reset') => void): () => void
   setPlatformEnabled(platform: Platform, enabled: boolean, channels: string[]): Promise<void>
   setChannels(platform: Platform, channels: string[]): Promise<void>
   setAlwaysOnTop(value: boolean): Promise<void>
@@ -374,6 +382,7 @@ export const IPC = {
   liveGet: 'follows:live',
   liveChanged: 'follows:live-changed',
   windowTheme: 'window:theme',
+  zoomKey: 'chat:zoom-key',
   send: 'chat:send',
   moderate: 'chat:moderate',
   authGet: 'auth:get',

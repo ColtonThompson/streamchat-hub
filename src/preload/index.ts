@@ -35,6 +35,11 @@ const api: HubApi = {
     ipcRenderer.on(IPC.status, handler)
     return () => ipcRenderer.removeListener(IPC.status, handler)
   },
+  onZoomKey(cb) {
+    const handler = (_e: unknown, action: Parameters<typeof cb>[0]) => cb(action)
+    ipcRenderer.on(IPC.zoomKey, handler)
+    return () => ipcRenderer.removeListener(IPC.zoomKey, handler)
+  },
 
   // ---- requests UI -> main -------------------------------------------------------------
   setPlatformEnabled: (platform, enabled, channels) => ipcRenderer.invoke(IPC.toggle, platform, enabled, channels),

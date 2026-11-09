@@ -27,6 +27,7 @@
  * Sub-components in this file: EmoteImg, BadgeIcon, Part.
  */
 import { memo, useState, type KeyboardEvent } from 'react'
+import { channelTag } from '../../../shared/channels'
 import type { Badge, ChatMessage, MessagePart } from '../../../shared/types'
 import { readableOn, textOn } from '../lib/color'
 import { EVENT_META, REMOVED_TEXT } from '../lib/events'
@@ -114,7 +115,7 @@ interface Props {
   msg: ChatMessage
   /** 0 or 1: alternates row to row so neighbouring messages are easy to tell apart (see ChatFeed). */
   alt: 0 | 1
-  /** Show a "#channel" tag (when several Twitch channels are being read). */
+  /** Show a source tag ("#channel" / "@channel") when several channels of this platform are being read. */
   showChannel?: boolean
   /** 'off', or how to format the time shown at the start of the row (see lib/time.ts). */
   timeStyle: TimeStyle
@@ -180,7 +181,7 @@ export const MessageRow = memo(function MessageRow({ msg, alt, showChannel, time
     body = (
       <>
         {timeEl}
-        {showChannel && <span className="chan-tag">#{msg.channelId}</span>}
+        {showChannel && <span className="chan-tag">{channelTag(msg)}</span>}
         <span className="event-tag">{evMeta.label}</span>
         {ev.title && <strong className="event-title">{ev.title}</strong>}
         {msg.parts.length > 0 && (
@@ -194,7 +195,7 @@ export const MessageRow = memo(function MessageRow({ msg, alt, showChannel, time
     body = (
       <>
         {timeEl}
-        {showChannel && <span className="chan-tag">#{msg.channelId}</span>}
+        {showChannel && <span className="chan-tag">{channelTag(msg)}</span>}
         {msg.author.badges.map((b) => (
           <BadgeIcon key={b.id} badge={b} />
         ))}

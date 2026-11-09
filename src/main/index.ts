@@ -23,6 +23,7 @@
 import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
 import { parseSources } from '../shared/channels'
+import { zoomActionForKey } from '../shared/zoom'
 import { IPC, type LiveChannel, type LoginOptions, type ModerationCommand, type Platform, type WindowTheme } from '../shared/types'
 import { MessageBus } from './bus'
 import { APP_ID } from './appId'
@@ -66,6 +67,16 @@ function createWindow(): void {
       nodeIntegration: false, // UI code cannot use Node
       sandbox: true
     }
+  })
+
+  // Ctrl +, Ctrl - and Ctrl 0 change the CHAT text size (not the whole window). Electron's default menu
+  // would otherwise grab these keys to zoom the entire page, so they are intercepted here first and
+  // handed to the UI, which owns the setting.
+  win.webContents.on('before-input-event', (event, input) => {
+    const action = zoomActionForKey(input)
+    if (!action) return
+    event.preventDefault()
+    win.webContents.send(IPC.zoomKey, action)
   })
 
   // Links clicked in chat open in the user's real browser, never inside the app window.

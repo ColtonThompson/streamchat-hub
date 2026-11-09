@@ -111,6 +111,20 @@ await scenario('YouTube adapter (against a fake YouTube)', async (check) => {
   check('old stream (not live now) -> offline', inner.parseLivePage(livePage(VID, false)) === undefined)
   check('channel page (no canonical watch link) -> offline', inner.parseLivePage('<link rel="canonical" href="https://www.youtube.com/@abc"> "isLiveNow":true') === undefined)
 
+  // ============================================================ channel label (the "@channel" source tag)
+  {
+    const { channelTag } = await import('../../src/shared/channels')
+    check('owner name from ownerChannelName', inner.parseOwnerName('x"ownerChannelName":"Pixel Witch"y') === 'Pixel Witch')
+    check('owner name falls back to author, decodes escapes', inner.parseOwnerName('"author":"Caf\\u00e9 \\"Live\\""') === 'Café "Live"')
+    check('owner name missing/blank -> undefined', inner.parseOwnerName('<html></html>') === undefined && inner.parseOwnerName('"ownerChannelName":"  "') === undefined)
+    check('live page carries the owner', inner.parseLivePage(livePage(VID, true).replace('<script>', '<script>"ownerChannelName":"Pixel Witch",'))?.owner === 'Pixel Witch')
+    const withLabel = parseActions([add('liveChatTextMessageRenderer', base('l1', { message: { runs: [text('hi')] } }))], ctx({ channelLabel: '@pixelwitch' }))[0]
+    const noLabel = parseActions([add('liveChatTextMessageRenderer', base('l2', { message: { runs: [text('hi')] } }))], ctx())[0]
+    check('rows carry the label; channelId stays the video id', withLabel?.kind === 'message' && withLabel.message.channelLabel === '@pixelwitch' && withLabel.message.channelId === VID)
+    check('no label -> field absent', noLabel?.kind === 'message' && !('channelLabel' in noLabel.message))
+    check('tag: YouTube label, falls back to the id; Twitch keeps #', channelTag({ platform: 'youtube', channelId: VID, channelLabel: '@pixelwitch' }) === '@pixelwitch' && channelTag({ platform: 'youtube', channelId: VID }) === VID && channelTag({ platform: 'twitch', channelId: 'summit1g' }) === '#summit1g')
+  }
+
   // ============================================================ pacer
   {
     const out: number[] = []

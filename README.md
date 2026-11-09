@@ -292,6 +292,19 @@ permission for the app in Windows Settings -> System -> Notifications (and Focus
 
 ---
 
+## Which channel is a message from?
+
+When you read more than one channel on a platform, each row gets a small tag: `#channel` for Twitch, and `@channel` for YouTube
+(the handle you typed, or the channel's name when you typed a stream link or channel id). YouTube's tag is looked up from YouTube's
+pages, so if it can't be found the row shows the video id instead.
+
+## Chat text size (zoom)
+
+Settings -> Appearance -> **Chat text size** scales the chat messages from 50% to 250% (default 100%). It is remembered.
+Shortcuts: **Ctrl +**, **Ctrl -**, **Ctrl 0** (Cmd on a Mac), or hold **Ctrl** and scroll over the chat (a trackpad pinch works too).
+Only the message rows scale, not the buttons around them. The rules live in `src/shared/zoom.ts`; the shortcuts are caught in the
+main process (`before-input-event`) because Electron's default menu would otherwise zoom the whole window.
+
 ## Testing
 
 ```

@@ -30,6 +30,8 @@ export default function App() {
   useEffect(() => subscribeToUpdates(), [])
   useEffect(() => subscribeToLive(), [])
   useThemeSync()
+  // Ctrl +/-/0 are spotted by the main process (so the default menu can't grab them) and arrive here.
+  useEffect(() => window.api.onZoomKey((action) => useSettingsStore.getState().zoom(action)), [])
   // Tell the main process whether go-live notifications are wanted (at startup and whenever it changes).
   const liveAlerts = useSettingsStore((s) => s.liveAlerts)
   useEffect(() => void window.api.setLiveAlerts(liveAlerts), [liveAlerts])

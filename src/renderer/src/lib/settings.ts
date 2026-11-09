@@ -14,6 +14,7 @@
  * TO ADD A SETTING: add the field to `Settings` and `DEFAULT_SETTINGS`, validate it in
  *   `sanitizeSettings`, add an action in settingsStore.ts, and put a control in a Settings tab.
  */
+import { clampZoom, ZOOM_DEFAULT } from '../../../shared/zoom'
 import { THEMES, type ThemeChoice } from './themes'
 
 export type TimestampMode = 'off' | '12h' | '24h'
@@ -27,6 +28,8 @@ export interface Settings {
   blacklist: string[]
   /** Desktop notification when a followed channel goes live (Twitch). */
   liveAlerts: boolean
+  /** Chat text size as a percentage (100 = normal). See shared/zoom.ts. */
+  chatZoom: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,7 +37,8 @@ export const DEFAULT_SETTINGS: Settings = {
   timestamps: 'off',
   timestampSeconds: false,
   blacklist: [],
-  liveAlerts: true
+  liveAlerts: true,
+  chatZoom: ZOOM_DEFAULT
 }
 
 export const MAX_BLACKLIST_TERMS = 200
@@ -74,10 +78,11 @@ export function sanitizeSettings(raw: unknown): Settings {
     }
   }
   const liveAlerts = typeof r.liveAlerts === 'boolean' ? r.liveAlerts : DEFAULT_SETTINGS.liveAlerts
-  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts }
+  const chatZoom = typeof r.chatZoom === 'number' ? clampZoom(r.chatZoom) : DEFAULT_SETTINGS.chatZoom
+  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts, chatZoom }
 }
 
 /** The fields that get saved (everything in `Settings`, nothing else from the store). */
 export function pickSettings(s: Settings): Settings {
-  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts }
+  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts, chatZoom: s.chatZoom }
 }

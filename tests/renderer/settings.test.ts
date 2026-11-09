@@ -22,8 +22,8 @@ describe('sanitizeSettings', () => {
   })
 
   it('keeps valid values', () => {
-    const s = sanitizeSettings({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false })
-    expect(s).toEqual({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false })
+    const s = sanitizeSettings({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130 })
+    expect(s).toEqual({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130 })
   })
 
   it('accepts the "system" theme', () => {
@@ -78,9 +78,21 @@ describe('normalizeTerm', () => {
   })
 })
 
+describe('chat zoom setting', () => {
+  it('defaults to 100 and repairs bad values', () => {
+    expect(DEFAULT_SETTINGS.chatZoom).toBe(100)
+    expect(sanitizeSettings({}).chatZoom).toBe(100)
+    expect(sanitizeSettings({ chatZoom: 'big' }).chatZoom).toBe(100)
+    expect(sanitizeSettings({ chatZoom: NaN }).chatZoom).toBe(100)
+    expect(sanitizeSettings({ chatZoom: 9999 }).chatZoom).toBe(250)
+    expect(sanitizeSettings({ chatZoom: 1 }).chatZoom).toBe(50)
+    expect(sanitizeSettings({ chatZoom: 120.4 }).chatZoom).toBe(120)
+  })
+})
+
 describe('pickSettings', () => {
   it('returns only the saved fields', () => {
     const picked = pickSettings({ ...DEFAULT_SETTINGS, extra: 1 } as never)
-    expect(Object.keys(picked).sort()).toEqual(['blacklist', 'liveAlerts', 'theme', 'timestampSeconds', 'timestamps'])
+    expect(Object.keys(picked).sort()).toEqual(['blacklist', 'chatZoom', 'liveAlerts', 'theme', 'timestampSeconds', 'timestamps'])
   })
 })

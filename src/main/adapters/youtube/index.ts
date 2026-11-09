@@ -23,6 +23,7 @@
  *   index.ts      (this file) lifecycle, retries, de-duplication, status
  *
  * IDS: a message's `channelId` is the stream's VIDEO id (e.g. "dQw4w9WgXcQ"), not what was typed.
+ *   Its `channelLabel` is the readable name (the typed @handle, else the channel's name) for the source tag.
  *   A handle can have a different video each day; the video id is what moderation events match on.
  *
  * NOT DONE YET: sending messages and moderating from the app (YouTube needs Google sign-in plus the
@@ -31,7 +32,7 @@
 import { youtubeSourceKind } from '../../../shared/channels'
 import type { ChatMessage } from '../../../shared/types'
 import type { AdapterEmit, ChatAdapter } from '../base'
-import { ChatUnavailableError, findLiveVideo, openChat, pollChat } from './innertube'
+import { ChatUnavailableError, findLiveVideo, findOwnerName, openChat, pollChat } from './innertube'
 import { Pacer } from './pacer'
 import { parseActions, type ChatItem } from './parse'
 
@@ -69,6 +70,8 @@ class SourceReader {
   private names = new Map<string, string>()
   /** Consecutive failures; drives the retry delay. Reset by every successful poll. */
   private failures = 0
+  /** The channel name for a source typed as a single video (looked up once). */
+  private ownerName: string | undefined
 
   constructor(
     readonly source: string,
@@ -96,6 +99,7 @@ class SourceReader {
       try {
         let videoId = this.source
         let title: string | undefined
+        let label: string | undefined = this.source.startsWith('@') ? this.source : undefined
         if (!isVideo) {
           const live = await findLiveVideo(this.source)
           if (this.stopped) return
@@ -107,9 +111,13 @@ class SourceReader {
           }
           videoId = live.videoId
           title = live.title
+          label ??= live.owner
+        } else {
+          this.ownerName ??= await findOwnerName(videoId) // once; a failure just leaves the video id as the tag
+          label = this.ownerName
         }
 
-        await this.read(videoId, title) // returns when the chat ends (or we are stopped)
+        await this.read(videoId, title, label) // returns when the chat ends (or we are stopped)
         if (this.stopped) return
         this.set('waiting', isVideo ? 'stream ended' : `${this.source}'s stream ended; waiting for the next one`)
         await this.sleep(OFFLINE_POLL_MS)
@@ -131,12 +139,12 @@ class SourceReader {
   }
 
   /** Open one stream's chat and keep polling it. Network errors are thrown to `run()`, which retries. */
-  private async read(videoId: string, title: string | undefined): Promise<void> {
+  private async read(videoId: string, title: string | undefined, label: string | undefined): Promise<void> {
     this.set('connecting', 'opening chat')
     const session = await openChat(videoId)
     if (this.stopped) return
     this.set('live', title ?? `video ${videoId}`)
-    this.process(session.initialActions, videoId, 0) // recent history: show immediately
+    this.process(session.initialActions, videoId, label, 0) // recent history: show immediately
 
     let token = session.continuation
     while (!this.stopped) {
@@ -144,10 +152,10 @@ class SourceReader {
       if (this.stopped) return
       this.failures = 0
       if (!poll.next) {
-        this.process(poll.actions, videoId, 0) // no new token = the chat has ended
+        this.process(poll.actions, videoId, label, 0) // no new token = the chat has ended
         return
       }
-      this.process(poll.actions, videoId, poll.next.timeoutMs)
+      this.process(poll.actions, videoId, label, poll.next.timeoutMs)
       token = poll.next.token
       await this.sleep(poll.next.timeoutMs)
     }
@@ -159,9 +167,9 @@ class SourceReader {
    * Parse a poll's actions and queue the new items. Actions are parsed ONE AT A TIME and names are
    * remembered as we go, so a removal later in the same poll can name the viewer from an earlier message.
    */
-  private process(actions: unknown[], videoId: string, spanMs: number): void {
+  private process(actions: unknown[], videoId: string, label: string | undefined, spanMs: number): void {
     const items: ChatItem[] = []
-    const ctx = { videoId, nameOf: (id: string) => this.names.get(id), onUnknown: warnOnce }
+    const ctx = { videoId, channelLabel: label, nameOf: (id: string) => this.names.get(id), onUnknown: warnOnce }
     for (const action of actions) {
       for (const item of parseActions([action], ctx)) {
         if (item.kind === 'message') {

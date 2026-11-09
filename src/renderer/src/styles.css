@@ -160,15 +160,20 @@ body {
 /* ============================================================================================
    5. MESSAGE ROWS   base look, alternating shade, hover
    ============================================================================================ */
-.feed { position: relative; flex: 1; min-height: 0; user-select: text; } /* min-height:0 lets the list scroll instead of growing */
+.feed {
+  position: relative; flex: 1; min-height: 0; user-select: text;
+  /* CHAT ZOOM: ChatFeed sets --chat-zoom (1 = normal). Everything inside a row is sized in `em`, so this one
+     font-size scales the text, the platform square, the padding and the badges together. */
+  font-size: calc(14px * var(--chat-zoom, 1));
+} /* min-height:0 lets the list scroll instead of growing */
 
 /* One row. `--row-bg` is the row's background colour; later rules just change this variable, and
    `background` reads it, so shading, hover and event tints all combine cleanly. */
 .msg {
   --row-bg: var(--row-a);
   position: relative;       /* anchor for the hover toolbar (section 8) */
-  display: flex; gap: 9px; align-items: flex-start;
-  padding: 6px 12px 6px 10px;
+  display: flex; gap: .64em; align-items: flex-start;
+  padding: .43em .86em .43em .71em;
   background: var(--row-bg);
   border-left: 3px solid color-mix(in srgb, var(--accent) 70%, transparent); /* platform colour stripe */
 }
@@ -178,13 +183,13 @@ body {
 
 /* The small coloured square with the platform's letters. */
 .msg-platform {
-  flex: none; margin-top: 2px; width: 20px; height: 20px; border-radius: 6px;
+  flex: none; margin-top: .14em; width: 1.43em; height: 1.43em; border-radius: .43em;
   display: grid; place-items: center;
-  font-size: 10px; font-weight: 800; color: #14111b; background: var(--accent);
+  font-size: .71em; font-weight: 800; color: #14111b; background: var(--accent);
 }
 .msg-body { min-width: 0; overflow-wrap: anywhere; } /* min-width:0 + overflow-wrap: long words wrap instead of widening the row */
 .author { font-weight: 700; margin-right: 8px; }
-.chan-tag { margin-right: 6px; font-size: 11px; font-weight: 600; color: var(--muted); } /* "#channel" when reading several */
+.chan-tag { margin-right: .43em; font-size: .79em; font-weight: 600; color: var(--muted); } /* "#channel" when reading several */
 .msg[data-action='true'] .text { font-style: italic; } /* "/me" messages */
 
 /* "Jump to latest" button, shown when scrolled up. */
@@ -207,7 +212,7 @@ body {
 .badge-img { height: 1.15em; width: auto; margin-right: 4px; vertical-align: -3px; }
 .badge {                  /* text badge pill, used until/unless a badge image is available */
   display: inline-block; margin-right: 5px; padding: 0 5px;
-  font-size: 10px; font-weight: 700; border-radius: 4px; vertical-align: 1px;
+  font-size: .71em; font-weight: 700; border-radius: .29em; vertical-align: 1px;
   background: var(--line); color: var(--muted);
 }
 .text a { color: var(--link); }
@@ -230,19 +235,19 @@ body {
    ============================================================================================ */
 
 /* Channel events (subs, gifts, raids, announcements): `--event` is set per row from lib/events.ts. */
-.msg[data-event] { --row-bg: color-mix(in srgb, var(--event) 11%, var(--row-a)); border-left: 4px solid var(--event); padding-left: 9px; }
+.msg[data-event] { --row-bg: color-mix(in srgb, var(--event) 11%, var(--row-a)); border-left: 4px solid var(--event); padding-left: .64em; }
 .msg[data-event][data-alt='1'] { --row-bg: color-mix(in srgb, var(--event) 11%, var(--row-b)); }
 .event-tag {              /* the coloured label pill: "Sub", "Raid"... */
   display: inline-block; margin-right: 8px; padding: 0 8px; border-radius: 999px;
-  font-size: 11px; font-weight: 800; color: #14111b; background: var(--event); vertical-align: 1px;
+  font-size: .79em; font-weight: 800; color: #14111b; background: var(--event); vertical-align: 1px;
 }
 .event-title { font-weight: 700; }
 .event-msg { margin-top: 3px; } /* the viewer's attached message, under the title */
 
 /* Moderation notes ("X was timed out"): deliberately quiet, so they override the event tint above. */
-.msg[data-event='moderation'], .msg[data-event='notice'] { --row-bg: var(--row-a); border-left-color: var(--line); padding-top: 3px; padding-bottom: 3px; }
+.msg[data-event='moderation'], .msg[data-event='notice'] { --row-bg: var(--row-a); border-left-color: var(--line); padding-top: .21em; padding-bottom: .21em; }
 .msg[data-event='moderation'][data-alt='1'], .msg[data-event='notice'][data-alt='1'] { --row-bg: var(--row-b); }
-.event-note { font-size: 12.5px; font-style: italic; color: var(--muted); }
+.event-note { font-size: .89em; font-style: italic; color: var(--muted); }
 
 /* Removed (deleted / timed out / banned) messages. Rows are clickable to peek (role="button"). */
 .msg[role='button'] { cursor: pointer; }
@@ -255,12 +260,12 @@ body {
 .msg[data-highlight='bits'] { background: color-mix(in srgb, #9b6bff 15%, var(--row-bg)); }
 .bits-pill {
   display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px;
-  font-size: 11px; font-weight: 800; color: #14111b; background: #b794ff; vertical-align: 1px;
+  font-size: .79em; font-weight: 800; color: #14111b; background: #b794ff; vertical-align: 1px;
 }
 /* YouTube Super Chat amount. --tier is YouTube's colour for that amount (set inline); gold if absent. */
 .super-pill {
   display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px;
-  font-size: 11px; font-weight: 800; color: #14111b; background: var(--tier, #ffd166); vertical-align: 1px;
+  font-size: .79em; font-weight: 800; color: #14111b; background: var(--tier, #ffd166); vertical-align: 1px;
 }
 /* Channel boxes: one per platform that can read chat; side by side when there is room. */
 .channel-row { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -483,3 +488,15 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---- chat zoom: the small size badge over the feed, and the Settings control ---- */
+.zoom-badge {
+  position: absolute; top: 8px; right: 12px; z-index: 3; pointer-events: none;
+  font-size: 12.5px; font-weight: 700; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; box-shadow: 0 4px 14px var(--shadow);
+}
+.zoom-control { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.zoom-range { flex: 1 1 160px; accent-color: var(--accent-default); }
+.zoom-value { min-width: 3.2em; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.zoom-preview { font-size: calc(14px * var(--chat-zoom, 1)); padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--row-b); overflow-wrap: anywhere; user-select: text; }
+.zoom-preview strong { margin-right: .55em; }

@@ -43,11 +43,26 @@ export class ChatUnavailableError extends Error {}
 export interface LiveInfo {
   videoId: string
   title?: string
+  /** The channel's display name, when the page says it. */
+  owner?: string
 }
 
 /** Decode the few HTML entities that appear in page titles. */
 const unescapeHtml = (s: string) =>
   s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+
+/** The channel name from a watch/live page's HTML, or undefined. */
+export function parseOwnerName(html: string): string | undefined {
+  // The watch page names the channel twice; either is fine. JSON strings may contain \uXXXX escapes.
+  const raw = /"ownerChannelName":"((?:[^"\\]|\\.)*)"/.exec(html)?.[1] ?? /"author":"((?:[^"\\]|\\.)*)"/.exec(html)?.[1]
+  if (!raw) return undefined
+  try {
+    const name = (JSON.parse(`"${raw}"`) as string).trim()
+    return name || undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Read the HTML of "youtube.com/@name/live". When the channel IS live, YouTube serves that stream's watch
@@ -59,7 +74,17 @@ export function parseLivePage(html: string): LiveInfo | undefined {
   const live = /"liveBroadcastDetails":\{[^}]*"isLiveNow":true/.test(html)
   if (!canonical || !live) return undefined
   const title = /<meta property="og:title" content="([^"]*)"/.exec(html)?.[1]
-  return { videoId: canonical[1], title: title ? unescapeHtml(title) : undefined }
+  return { videoId: canonical[1], title: title ? unescapeHtml(title) : undefined, owner: parseOwnerName(html) }
+}
+
+/** Best effort: the channel name behind a video id (for sources typed as a single stream). Never throws. */
+export async function findOwnerName(videoId: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(`${WATCH}/watch?v=${encodeURIComponent(videoId)}`, { headers: COMMON_HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) })
+    return res.ok ? parseOwnerName(await res.text()) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** `source` is "@handle" or "UC..." (a channel id). Returns the live stream, or undefined when offline. */

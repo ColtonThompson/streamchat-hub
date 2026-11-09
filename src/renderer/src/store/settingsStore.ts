@@ -28,6 +28,7 @@ import {
   type Settings,
   type TimestampMode
 } from '../lib/settings'
+import { applyZoomAction, clampZoom, type ZoomAction } from '../../../shared/zoom'
 import { resolveTheme, type ThemeChoice, type ThemeId } from '../lib/themes'
 
 export type SettingsTab = 'appearance' | 'chat' | 'accounts' | 'about'
@@ -58,6 +59,10 @@ interface SettingsState extends Settings {
   setTimestamps: (mode: TimestampMode) => void
   setTimestampSeconds: (on: boolean) => void
   setLiveAlerts: (on: boolean) => void
+  /** Set the chat text size (percent); out-of-range values are clamped. */
+  setChatZoom: (percent: number) => void
+  /** Step the chat text size bigger/smaller, or back to 100%. */
+  zoom: (action: ZoomAction) => void
   /** Add a term to the blacklist. Duplicates are detected ignoring case. */
   addBlacklistTerm: (raw: string) => AddTermResult
   removeBlacklistTerm: (term: string) => void
@@ -83,6 +88,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setTimestamps: (timestamps) => set({ timestamps }),
   setTimestampSeconds: (timestampSeconds) => set({ timestampSeconds }),
   setLiveAlerts: (liveAlerts) => set({ liveAlerts }),
+  setChatZoom: (percent) => set({ chatZoom: clampZoom(percent) }),
+  zoom: (action) => set((s) => ({ chatZoom: applyZoomAction(s.chatZoom, action) })),
 
   addBlacklistTerm: (raw) => {
     const term = normalizeTerm(raw)
@@ -106,7 +113,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 useSettingsStore.subscribe((state, prev) => {
   const a = pickSettings(state)
   const b = pickSettings(prev)
-  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts) return
+  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts && a.chatZoom === b.chatZoom) return
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(a))
   } catch {

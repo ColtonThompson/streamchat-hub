@@ -18,9 +18,10 @@
  * or pressing the button resumes following. Content growing under you (emote images loading and rows
  * re-wrapping) never switches following off, because only user input does. See `followRef` below.
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { parseChannels } from '../../../shared/channels'
+import { parseChannels, parseYouTubeSources } from '../../../shared/channels'
+import { ZOOM_DEFAULT } from '../../../shared/zoom'
 import { compileBlacklist } from '../lib/blacklist'
 import { buildRows, newShading, type ShadingMemory } from '../lib/rows'
 import { THEMES } from '../lib/themes'
@@ -34,21 +35,36 @@ export function ChatFeed() {
   const enabled = useChatStore((s) => s.enabled)
   const showEvents = useChatStore((s) => s.showEvents)
   const twitchChannels = useChatStore((s) => s.channels.twitch)
+  const youtubeChannels = useChatStore((s) => s.channels.youtube)
   const blacklist = useSettingsStore((s) => s.blacklist)
   const timestamps = useSettingsStore((s) => s.timestamps)
   const timestampSeconds = useSettingsStore((s) => s.timestampSeconds)
   const resolvedTheme = useSettingsStore((s) => s.resolvedTheme)
+  const chatZoom = useSettingsStore((s) => s.chatZoom)
   // Your Twitch login, lowercased: lets rows give a stronger highlight to @mentions of you.
   const me = useChatStore((s) => s.auth.login)?.toLowerCase()
 
-  // When several Twitch channels are listed, rows get a "#channel" tag so you can tell them apart.
-  const multiChannel = useMemo(() => parseChannels(twitchChannels).length > 1, [twitchChannels])
+  // When several channels of a platform are listed, its rows get a "#channel" / "@channel" tag so you can tell them apart.
+  const multiTwitch = useMemo(() => parseChannels(twitchChannels).length > 1, [twitchChannels])
+  const multiYoutube = useMemo(() => parseYouTubeSources(youtubeChannels).length > 1, [youtubeChannels])
   const timeStyle = timeStyleOf(timestamps, timestampSeconds)
   const themeBg = THEMES[resolvedTheme].vars['--bg']
   /** The test function for the current blacklist; rebuilt only when the list changes. */
   const isBlacklisted = useMemo(() => compileBlacklist(blacklist), [blacklist])
 
   const ref = useRef<VirtuosoHandle>(null)
+
+  // A small "120%" badge flashes whenever the size changes, so Ctrl+scroll and shortcuts give feedback.
+  // (The first render is skipped: opening the app shouldn't flash it.)
+  const [badge, setBadge] = useState(false)
+  const lastZoom = useRef(chatZoom)
+  useEffect(() => {
+    if (lastZoom.current === chatZoom) return
+    lastZoom.current = chatZoom
+    setBadge(true)
+    const t = setTimeout(() => setBadge(false), 1200)
+    return () => clearTimeout(t)
+  }, [chatZoom])
 
   /**
    * FOLLOWING: should the list keep scrolling to the newest message?
@@ -91,7 +107,14 @@ export function ChatFeed() {
         lastIntent = performance.now()
         setFollowing(false)
       }
-      const onWheel = (e: WheelEvent) => e.deltaY < 0 && leave() // wheel/trackpad scrolling UP
+      const onWheel = (e: WheelEvent) => e.deltaY < 0 && !e.ctrlKey && leave() // wheel/trackpad scrolling UP (Ctrl+wheel is zoom, below)
+      // Ctrl + mouse wheel (and a trackpad pinch, which browsers report the same way) changes the text size.
+      // Not passive, because it must cancel the scroll. Following the newest message is unaffected.
+      const onZoomWheel = (e: WheelEvent) => {
+        if (!e.ctrlKey || e.deltaY === 0) return
+        e.preventDefault()
+        useSettingsStore.getState().zoom(e.deltaY < 0 ? 'in' : 'out')
+      }
       const onTouchMove = () => leave()
       const onKey = (e: KeyboardEvent) => ['PageUp', 'ArrowUp', 'Home'].includes(e.key) && leave()
       // Pressing on the scrollbar itself (the target is the scroller, not a row) means dragging it.
@@ -110,6 +133,7 @@ export function ChatFeed() {
       }
 
       el.addEventListener('wheel', onWheel, { passive: true })
+      el.addEventListener('wheel', onZoomWheel, { passive: false })
       el.addEventListener('touchmove', onTouchMove, { passive: true })
       el.addEventListener('keydown', onKey)
       el.addEventListener('pointerdown', onPointerDown)
@@ -117,6 +141,7 @@ export function ChatFeed() {
       el.addEventListener('scroll', onScroll, { passive: true })
       detachScroller.current = () => {
         el.removeEventListener('wheel', onWheel)
+        el.removeEventListener('wheel', onZoomWheel)
         el.removeEventListener('touchmove', onTouchMove)
         el.removeEventListener('keydown', onKey)
         el.removeEventListener('pointerdown', onPointerDown)
@@ -152,7 +177,7 @@ export function ChatFeed() {
   }
 
   return (
-    <div className="feed">
+    <div className="feed" style={{ ['--chat-zoom' as string]: chatZoom / ZOOM_DEFAULT }}>
       <Virtuoso
         ref={ref}
         data={rows}
@@ -161,7 +186,7 @@ export function ChatFeed() {
           <MessageRow
             msg={r.msg}
             alt={r.alt}
-            showChannel={r.msg.platform === 'twitch' && multiChannel}
+            showChannel={r.msg.platform === 'twitch' ? multiTwitch : r.msg.platform === 'youtube' && multiYoutube}
             timeStyle={timeStyle}
             themeBg={themeBg}
             me={me}
@@ -180,6 +205,7 @@ export function ChatFeed() {
         }}
         initialTopMostItemIndex={rows.length - 1}
       />
+      {badge && <div className="zoom-badge" role="status">{chatZoom}%</div>}
       {!isFollowing && (
         <button
           className="jump"

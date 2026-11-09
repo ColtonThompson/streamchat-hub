@@ -98,6 +98,15 @@ export function parseYouTubeSources(raw: string): string[] {
   return [...out]
 }
 
+/**
+ * The small tag that says where a row came from: "#summit1g" for Twitch, "@mychannel" (or the channel's
+ * name) for YouTube. YouTube falls back to the video id when no name could be found.
+ */
+export function channelTag(msg: { platform: Platform; channelId: string; channelLabel?: string }): string {
+  if (msg.platform === 'youtube') return msg.channelLabel || msg.channelId
+  return `#${msg.channelId}`
+}
+
 /** The cleaned list for whatever platform's box was typed in. Platforms without their own rules use Twitch's. */
 export function parseSources(platform: Platform, raw: string): string[] {
   return platform === 'youtube' ? parseYouTubeSources(raw) : parseChannels(raw)
