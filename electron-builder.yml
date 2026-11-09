@@ -6,7 +6,7 @@
 # CHECK BEFORE YOUR FIRST RELEASE: appId (below), the icon (build/icon.png is a PLACEHOLDER),
 # and the "repository" field in package.json (the updater downloads from that GitHub repo).
 # Keep identical to APP_ID in src/main/appId.ts (Windows notifications need them to match).
-appId: com.example.streamchathub
+appId: org.nightgames.streamchathub
 productName: StreamChat Hub
 directories:
   output: release
