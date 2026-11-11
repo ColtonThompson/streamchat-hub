@@ -175,7 +175,7 @@ class SourceReader {
         if (item.kind === 'message') {
           if (this.seen.has(item.message.id)) continue // already shown (history re-sent after a reconnect)
           this.remember(item.message)
-        } else if (item.action.type === 'delete-message') {
+        } else if (item.kind === 'moderation' && item.action.type === 'delete-message') {
           // A message can only be deleted once, so a repeat (after a reconnect) is skipped.
           // (Bans are NOT de-duplicated: a viewer can legitimately be banned, unbanned and banned again.)
           const key = `del:${item.action.messageId}`
@@ -201,7 +201,9 @@ class SourceReader {
   private deliver(item: ChatItem): void {
     if (this.stopped) return
     if (item.kind === 'message') this.emit.message(item.message)
-    else this.emit.moderation?.(item.action)
+    else if (item.kind === 'moderation') this.emit.moderation?.(item.action)
+    else if (item.kind === 'pin') this.emit.pin?.(item.pin)
+    else if (item.kind === 'unpin') this.emit.unpin?.(item.channelId)
   }
 
   // ----------------------------------------------------------------------------- helpers

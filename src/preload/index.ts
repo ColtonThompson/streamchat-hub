@@ -64,6 +64,16 @@ const api: HubApi = {
     }
   },
 
+  // ---- title and viewers of the one stream being read ---------------------------------------
+  streamInfo: {
+    watch: (target) => ipcRenderer.invoke(IPC.streamInfoWatch, target),
+    onChange(cb) {
+      const handler = (_e: unknown, info: Parameters<typeof cb>[0]) => cb(info)
+      ipcRenderer.on(IPC.streamInfoChanged, handler)
+      return () => ipcRenderer.removeListener(IPC.streamInfoChanged, handler)
+    }
+  },
+
   // ---- followed channels that are live ------------------------------------------------------
   liveFollows: {
     get: () => ipcRenderer.invoke(IPC.liveGet),

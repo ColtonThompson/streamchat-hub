@@ -271,26 +271,35 @@ and the CI secrets. macOS/Linux builds aren't set up (macOS auto-update addition
 
 ---
 
-### Suggestions in the Twitch box
+### Channel checklist in the Twitch box
 
-With the go-live permission on, the Twitch channels box suggests followed channels that are live (game +
-viewers): type to filter, Tab takes the top match, Up/Down + Enter picks, Esc closes, or click the
-"N live" button for the whole list. Logic: `renderer/src/lib/suggest.ts`; the component:
-`ChannelInput.tsx`; the list comes from the same once-a-minute check as the notifications (`main/livewatch.ts`).
-Not yet checked visually in a real window, so tell me if the dropdown looks off.
+The dropdown under **Twitch channels** is a checklist. Channels already in your feed are ticked at the top; below them are the live
+channels you follow (this part needs go-live alerts enabled in Settings -> Accounts), unticked, most viewers first. **Click a row to
+add that channel; click a ticked row to remove it.** The list stays open so you can tick several, and each click is saved straight
+away (the channel joins or leaves at once if Twitch is on). Without the go-live permission the list still shows the channels in the
+box so you can untick them.
 
-### Go-live notifications
+You can still type: typing filters the list, Up/Down moves through the rows, Enter ticks or unticks the highlighted row (plain Enter
+means "use what I typed"), Tab takes the top match and Esc closes it. The logic is in `src/renderer/src/lib/suggest.ts`.
 
-Settings -> Accounts -> **Enable go-live alerts** asks Twitch for the `user:read:follows` permission. After that
-a checkbox, "Notify me when channels I follow go live", turns the alerts on or off (saved in settings). While on,
-`main/livewatch.ts` calls Twitch's `/streams/followed` every minute and shows a Windows notification such as
-"PixelWitch is live - Playing Hades II · title"; clicking it opens the channel in your browser.
-It never announces streams that were already live when the app started, skips quick drop-and-return blips
-(10 min), and shows one summary if more than 3 go live at once. Kick isn't covered: there is no Kick adapter yet.
-Settings -> Accounts has a **Send test notification** button to check that Windows shows them, and the terminal (dev mode) logs `[livewatch]` / `[alerts]` lines for each check. Not tested against real Twitch from the build environment; if nothing appears, confirm the notification
-permission for the app in Windows Settings -> System -> Notifications (and Focus assist / Do not disturb).
+## Stream title and viewer count
 
----
+When you read exactly **one** stream (one Twitch channel, or one YouTube stream, with no other platform switched on), a bar above the
+chat shows whether it is live, its title, the category (Twitch) and how many are watching. Settings -> Chat -> **Show stream title and
+viewer count** turns it off; while it is off nothing is looked up. It refreshes every 45 seconds. Twitch needs you signed in
+(`GET /streams`, no extra permission). YouTube is read from the stream's web page, which YouTube can change without notice
+(`parseWatchStats` in `adapters/youtube/innertube.ts`).
+
+## Pinned messages and reward redemptions
+
+- **Pinned messages** appear in a bar above the chat (close it with the x; a different pin shows again). YouTube pins arrive with
+  the chat. Twitch has no push event for pins, so the app checks every 20 seconds; this needs the **moderation tools** permission
+  and works in channels where you are the broadcaster or a moderator (other channels are skipped quietly).
+- **Reward redemptions** (Channel Points) show as "Reward" event rows, including the viewer's message. Twitch only sends them to
+  the broadcaster, so it is your own channel only: Settings -> Accounts -> **Enable reward redemptions**, put your channel in the
+  Twitch box and switch Twitch on.
+- Poll, prediction and redemption rows are sent once per moment (their ids are fixed), and the chat list ignores a repeated message id.
+  The terminal prints one `[activity]` line per event Twitch sends.
 
 ## Which channel is a message from?
 

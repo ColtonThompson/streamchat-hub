@@ -75,7 +75,7 @@ function BadgeIcon({ badge }: { badge: Badge }) {
 const SOURCE_LABEL = { native: 'Twitch', '7tv': '7TV', bttv: 'BTTV', ffz: 'FFZ', youtube: 'YouTube' } as const
 
 /** Renders one piece of a message: plain text, an emote (with any stacked overlays), or a link. */
-function Part({ part, me }: { part: MessagePart; me?: string }) {
+export function Part({ part, me }: { part: MessagePart; me?: string }) {
   switch (part.type) {
     case 'emote': {
       const title = part.source ? `${part.value} (${SOURCE_LABEL[part.source]})` : part.value

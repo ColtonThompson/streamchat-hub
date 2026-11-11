@@ -62,12 +62,22 @@ export function TwitchAccount() {
             Enable polls &amp; predictions
           </button>
         )}
-        {auth.canReadPolls && (
+        {(auth.canReadPolls || auth.canReadRedemptions) && (
           <p className="setting-help">
-            Polls and predictions show for your own channel: add <strong>{auth.login}</strong> to the Twitch box and switch
-            Twitch on.
+            Polls, predictions and reward redemptions show for your own channel: add <strong>{auth.login}</strong> to the Twitch
+            box and switch Twitch on.
           </p>
         )}
+        {!auth.canReadRedemptions && (
+          <button
+            className="tool"
+            title="Asks Twitch for permission to read Channel Points redemptions in your own channel, so each reward a viewer redeems appears in the chat as an event."
+            onClick={() => void window.api.auth.login({ redemptions: true })}
+          >
+            Enable reward redemptions
+          </button>
+        )}
+        {auth.canReadRedemptions && <span className="account-ok">Reward redemptions on</span>}
         {auth.canReadFollows ? (
           <>
             <label className="check">

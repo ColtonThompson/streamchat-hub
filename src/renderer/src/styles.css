@@ -147,10 +147,15 @@ body {
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow);
 }
 .suggest-item {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name viewers' 'game game';
-  column-gap: 10px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'check name viewers' 'check game game';
+  column-gap: 9px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
 }
-.suggest-item[aria-selected='true'] { background: color-mix(in srgb, var(--accent-default) 24%, transparent); }
+.suggest-item[data-active='true'] { background: color-mix(in srgb, var(--accent-default) 24%, transparent); }
+.suggest-check {
+  grid-area: check; align-self: center; width: 16px; height: 16px; border: 1.5px solid var(--muted); border-radius: 4px;
+  display: grid; place-items: center; font-size: 11px; font-weight: 800; line-height: 1; color: var(--on-accent);
+}
+.suggest-item[data-checked='true'] .suggest-check { background: var(--accent-default); border-color: var(--accent-default); }
 .suggest-name { grid-area: name; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest-game { grid-area: game; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggest-viewers { grid-area: viewers; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -500,3 +505,21 @@ body {
 .zoom-value { min-width: 3.2em; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .zoom-preview { font-size: calc(14px * var(--chat-zoom, 1)); padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--row-b); overflow-wrap: anywhere; user-select: text; }
 .zoom-preview strong { margin-right: .55em; }
+
+/* ---- PINNED MESSAGES: the bar above the feed (components/PinnedBar.tsx) ---- */
+.pins { flex: none; max-height: 32vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--bg); user-select: text; }
+.pin { border: 1px solid var(--line); border-left: 3px solid var(--accent-default); border-radius: 8px; background: var(--panel); padding: 6px 10px; font-size: calc(14px * var(--chat-zoom, 1)); }
+.pin-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.pin-tag { font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-default); }
+.pin-where { font-weight: 600; }
+.pin-head .activity-close { margin-left: auto; }
+.pin-body { margin: 4px 0 0; overflow-wrap: anywhere; }
+.pin-author { margin-right: .5em; }
+
+/* ---- STREAM INFO: title + viewers above the chat (components/StreamInfoBar.tsx) ---- */
+.streaminfo { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--line); background: var(--bg); font-size: 13px; min-width: 0; }
+.streaminfo-state { flex: none; font-size: 11px; font-weight: 800; letter-spacing: .05em; color: var(--muted); }
+.streaminfo[data-live='true'] .streaminfo-state { color: #ff5d6c; }
+.streaminfo-title { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.streaminfo-game { flex: none; max-width: 30%; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.streaminfo-viewers { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }

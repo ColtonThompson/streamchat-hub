@@ -59,6 +59,7 @@ interface SettingsState extends Settings {
   setTimestamps: (mode: TimestampMode) => void
   setTimestampSeconds: (on: boolean) => void
   setLiveAlerts: (on: boolean) => void
+  setShowStreamInfo: (on: boolean) => void
   /** Set the chat text size (percent); out-of-range values are clamped. */
   setChatZoom: (percent: number) => void
   /** Step the chat text size bigger/smaller, or back to 100%. */
@@ -88,6 +89,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setTimestamps: (timestamps) => set({ timestamps }),
   setTimestampSeconds: (timestampSeconds) => set({ timestampSeconds }),
   setLiveAlerts: (liveAlerts) => set({ liveAlerts }),
+  setShowStreamInfo: (showStreamInfo) => set({ showStreamInfo }),
   setChatZoom: (percent) => set({ chatZoom: clampZoom(percent) }),
   zoom: (action) => set((s) => ({ chatZoom: applyZoomAction(s.chatZoom, action) })),
 
@@ -113,7 +115,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 useSettingsStore.subscribe((state, prev) => {
   const a = pickSettings(state)
   const b = pickSettings(prev)
-  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts && a.chatZoom === b.chatZoom) return
+  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts && a.chatZoom === b.chatZoom && a.showStreamInfo === b.showStreamInfo) return
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(a))
   } catch {

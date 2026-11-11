@@ -43,7 +43,8 @@ import {
 import { createAdapter } from './adapters'
 import type { ChatAdapter } from './adapters/base'
 import { EmoteService } from './emotes/service'
-import { ACTIVITY_EVENTS, parseActivityEvent } from './twitch/activity'
+import { ACTIVITY_EVENTS, parseActivityEvent, parseRedemptionEvent, REDEMPTION_EVENTS } from './twitch/activity'
+import { parseTwitchPin, PinWatcher } from './twitch/pins'
 import type { TwitchAuth } from './twitch/auth'
 import { BadgeService } from './twitch/badges'
 import { EventSubClient, type EventSubState, type SocketLike } from './twitch/eventsub'
@@ -80,6 +81,10 @@ export class MessageBus {
   private activityFor = ''
   /** The last state we told the user about, so each change is announced once. */
   private activityNotice = ''
+  /** Ids of poll / prediction / redemption rows already sent: a row for the same moment is never sent twice. */
+  private activityRowsSent = new Set<string>()
+  /** Watches Twitch pinned messages (needs the moderation permission). */
+  private pinWatch?: PinWatcher
 
   constructor(
     private win: BrowserWindow,
@@ -124,12 +129,15 @@ export class MessageBus {
       {
         message: (m) => this.enqueue(m),
         moderation: (a) => this.enqueueModeration(a),
+        pin: (p) => this.enqueuePin({ kind: 'pin', pin: p }),
+        unpin: (channelId) => this.enqueuePin({ kind: 'unpin', platform, channelId }),
         status: (s) => this.sendStatus(platform, s),
         channelReady: (channel, id) => {
           // The adapter learned a channel's numeric id: remember it and start loading emotes/badges.
           this.channelIds.set(`${platform}:${channel}`, id)
           this.emotes.registerChannel(platform, channel, id)
           this.badges.registerChannel(platform, channel, id)
+          if (platform === 'twitch') void this.pinWatch?.poll() // a newly joined channel may already have a pin
         }
       },
       channels
@@ -166,10 +174,14 @@ export class MessageBus {
    *   - YOUR channel is one of those being read (Twitch only shows a channel's polls to its own broadcaster)
    */
   private syncActivity(): void {
+    this.syncPins()
     const login = this.auth.loginName
     const userId = this.auth.userId
-    const want = !!login && !!userId && this.auth.canReadPolls && this.adapters.has('twitch') && this.twitchChannels.includes(login)
-    const key = want ? (userId as string) : ''
+    const polls = this.auth.canReadPolls
+    const redemptions = this.auth.canReadRedemptions
+    const want = !!login && !!userId && (polls || redemptions) && this.adapters.has('twitch') && this.twitchChannels.includes(login)
+    // The key changes when a permission is added or removed, which restarts the connection with the right event types.
+    const key = want ? `${userId}:${polls ? 'p' : ''}${redemptions ? 'r' : ''}` : ''
     if (key === this.activityFor) return
 
     this.activityClient?.stop()
@@ -180,27 +192,110 @@ export class MessageBus {
       return
     }
     this.activityClient = new EventSubClient({
-      types: ACTIVITY_EVENTS,
+      types: [...(polls ? ACTIVITY_EVENTS : []), ...(redemptions ? REDEMPTION_EVENTS : [])],
       // The `ws` WebSocket has the few methods EventSubClient uses; the cast just satisfies its simpler interface.
       createSocket: (url) => new WebSocket(url) as unknown as SocketLike,
       subscribe: (type, sessionId) => this.helix.subscribeEventSub(type, userId as string, sessionId),
       onNotification: (type, event) => {
+        // One line per event Twitch sends, so a repeated event can be spotted in the terminal.
+        console.log(`[activity] ${type} ${(event as { id?: string } | undefined)?.id ?? ''}`)
+        const redemption = parseRedemptionEvent(type, event)
+        if (redemption) {
+          this.enqueueActivityRow(redemption)
+          return
+        }
         const update = parseActivityEvent(type, event)
         if (!update) return
         this.enqueueActivity(update.activity)
-        if (update.row) this.enqueue(update.row)
+        if (update.row) this.enqueueActivityRow(update.row)
       },
-      onState: (state) => this.announceActivity(state, login as string)
+      onState: (state) => this.announceActivity(state, login as string),
+      onSubscribed: (results) => this.reportSubscriptions(results, login as string)
     })
+    console.log(`[activity] watching ${login}: ${[polls ? 'polls/predictions' : '', redemptions ? 'redemptions' : ''].filter(Boolean).join(' + ')}`)
     this.activityClient.start()
   }
 
-  /** Tell the user (once per change) whether polls & predictions are being watched, as a quiet row in the feed. */
+  /**
+   * A poll / prediction / redemption row. Each has a stable id ("the end of poll X"), and a row with an id
+   * already sent is dropped here, so no path (a repeated Twitch notification, a restarted connection)
+   * can show the same moment twice.
+   */
+  private enqueueActivityRow(row: ChatMessage): void {
+    if (this.activityRowsSent.has(row.id)) return
+    this.activityRowsSent.add(row.id)
+    if (this.activityRowsSent.size > 500) this.activityRowsSent.delete(this.activityRowsSent.values().next().value as string)
+    this.enqueue(row)
+  }
+
+  // ------------------------------------------------------------------------ pinned messages
+
+  /**
+   * Start or stop watching Twitch pins. Runs while Twitch is on and you are signed in with the moderation
+   * permission (the pin API needs you to be a moderator or the broadcaster of the channel; channels where
+   * you are not are skipped quietly).
+   */
+  private syncPins(): void {
+    const should = this.adapters.has('twitch') && this.auth.canModerate && !!this.auth.userId
+    if (should && !this.pinWatch) {
+      this.pinWatch = new PinWatcher({
+        targets: () => this.twitchChannels.flatMap((login) => {
+          const id = this.channelIds.get(`twitch:${login}`)
+          return id ? [{ login, id }] : []
+        }),
+        fetchPin: async (t) => {
+          const me = this.auth.userId
+          if (!me) return undefined
+          const data = await this.helix.getPinnedChat(t.id, me)
+          if (data === undefined) return undefined
+          return data === null ? null : (parseTwitchPin(t.login, data) ?? null)
+        },
+        onPin: (pin) => this.enqueuePin({ kind: 'pin', pin }),
+        onUnpin: (login) => this.enqueuePin({ kind: 'unpin', platform: 'twitch', channelId: login })
+      })
+      this.pinWatch.start()
+    } else if (!should && this.pinWatch) {
+      this.pinWatch.stop()
+      this.pinWatch = undefined
+    }
+  }
+
+  private enqueuePin(item: Extract<FeedItem, { kind: 'pin' | 'unpin' }>): void {
+    this.chain = this.chain.then(() => {
+      this.queue.push(item)
+    })
+  }
+
+  /**
+   * Log what Twitch accepted, and when only SOME event types were accepted say so in the feed (once), naming the
+   * ones that were refused. Without this a refused type (say, reward redemptions) would just never show anything.
+   */
+  private reportSubscriptions(results: { type: string; ok: boolean; error?: string }[], login: string): void {
+    for (const r of results) console.log(`[activity] ${r.ok ? 'subscribed' : 'REFUSED'} ${r.type}${r.error ? ` (${r.error})` : ''}`)
+    const failed = results.filter((r) => !r.ok)
+    if (!failed.length || failed.length === results.length) return // none failed, or all (announceActivity reports that)
+    const names = failed.map((f) => (f.type.includes('redemption') ? 'reward redemptions' : f.type.replace('channel.', '').split('.')[0] + 's'))
+    const title = `Not available: ${[...new Set(names)].join(', ')} (${failed[0].error ?? 'Twitch refused'})`
+    this.enqueue({
+      id: `activity-notice-partial-${Date.now()}`,
+      platform: 'twitch',
+      channelId: login,
+      author: { name: '', badges: [] },
+      parts: [],
+      timestamp: Date.now(),
+      event: { type: 'notice', title }
+    })
+  }
+
+  /** Tell the user (once per change) what is being watched, as a quiet row in the feed. */
   private announceActivity(state: EventSubState, login: string): void {
     const notice = state.state === 'connecting' ? '' : state.state === 'connected' ? 'connected' : `error:${state.message}`
     if (!notice || notice === this.activityNotice) return
     this.activityNotice = notice
-    const title = state.state === 'error' ? `Polls & predictions unavailable: ${state.message}` : 'Watching your polls & predictions'
+    const polls = this.auth.canReadPolls
+    const redemptions = this.auth.canReadRedemptions
+    const what = polls && redemptions ? 'polls, predictions & reward redemptions' : redemptions ? 'reward redemptions' : 'polls & predictions'
+    const title = state.state === 'error' ? `${what[0].toUpperCase()}${what.slice(1)} unavailable: ${state.message}` : `Watching your ${what}`
     this.enqueue({
       id: `activity-notice-${Date.now()}`,
       platform: 'twitch',
@@ -277,6 +372,7 @@ export class MessageBus {
     clearInterval(this.flushTimer)
     this.unsubscribeAuth()
     this.activityClient?.stop()
+    this.pinWatch?.stop()
     this.emotes.dispose()
     this.adapters.forEach((a) => a.disconnect())
     this.adapters.clear()

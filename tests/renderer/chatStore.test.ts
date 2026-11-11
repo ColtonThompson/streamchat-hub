@@ -41,7 +41,7 @@ const poll = (id: string, over: Partial<Extract<ChannelActivity, { kind: 'poll' 
 })
 
 beforeEach(() => {
-  useChatStore.setState({ ...initial, messages: [], activities: {}, enabled: { ...initial.enabled }, channels: { ...initial.channels } })
+  useChatStore.setState({ ...initial, messages: [], activities: {}, pins: {}, enabled: { ...initial.enabled }, channels: { ...initial.channels } })
   apiCalls.length = 0
   storageBroken = false
 })
@@ -218,5 +218,70 @@ describe('small actions', () => {
     s().showToast('first')
     s().showToast('second', 'error')
     expect(s().toast).toEqual({ text: 'second', kind: 'error' })
+  })
+})
+
+describe('the same row is never added twice', () => {
+  it('drops a repeat of a message id, in a later batch or in the same batch', () => {
+    s().addItems([msg('dup-1', { channelId: 'a' })])
+    s().addItems([msg('dup-1', { channelId: 'a' })])
+    s().addItems([msg('dup-2'), msg('dup-2')])
+    expect(s().messages.map((m) => m.id)).toEqual(['dup-1', 'dup-2'])
+  })
+
+  it('does not drop different messages, and still applies moderation to the kept one', () => {
+    s().addItems([msg('keep-1'), msg('keep-2')])
+    s().addItems([{ kind: 'moderation', action: { type: 'delete-message', platform: 'twitch', channelId: 'chan', messageId: 'keep-1' } }])
+    expect(s().messages.map((m) => m.id)).toEqual(['keep-1', 'keep-2'])
+    expect(s().messages[0].removed).toBe('deleted')
+  })
+
+  it('a repeated "Poll ended" row (same id) shows once', () => {
+    const ended = msg('activity-poll-p9-end', { event: { type: 'poll', title: 'Poll ended' } })
+    s().addItems([ended])
+    s().addItems([ended, ended])
+    expect(s().messages.filter((m) => m.id === 'activity-poll-p9-end')).toHaveLength(1)
+  })
+})
+
+describe('pinned messages', () => {
+  const pin = (over: Partial<Extract<FeedItem, { kind: 'pin' }>['pin']> = {}): FeedItem => ({
+    kind: 'pin',
+    pin: { platform: 'twitch', channelId: 'chan', messageId: 'pm1', author: { name: 'Mod' }, parts: [{ type: 'text', value: 'Rules' }], ...over }
+  })
+
+  it('stores a pin per channel and replaces it with a newer one', () => {
+    s().addItems([pin()])
+    expect(Object.keys(s().pins)).toEqual(['twitch:chan'])
+    s().addItems([pin({ messageId: 'pm2' })])
+    expect(s().pins['twitch:chan'].messageId).toBe('pm2')
+    expect(Object.keys(s().pins)).toHaveLength(1)
+  })
+
+  it('removes a pin on unpin, and ignores an unpin for a channel without one', () => {
+    s().addItems([pin({ channelId: 'x1' })])
+    s().addItems([{ kind: 'unpin', platform: 'twitch', channelId: 'x1' }])
+    expect(s().pins['twitch:x1']).toBeUndefined()
+    const before = s().pins
+    s().addItems([{ kind: 'unpin', platform: 'twitch', channelId: 'never' }])
+    expect(s().pins).toBe(before)
+  })
+
+  it('a closed pin stays closed, but a different pin shows again', () => {
+    s().addItems([pin({ channelId: 'c1', messageId: 'a' })])
+    s().dismissPin('twitch:c1')
+    expect(s().pins['twitch:c1']).toBeUndefined()
+    s().addItems([pin({ channelId: 'c1', messageId: 'a' })]) // the same pin is reported again
+    expect(s().pins['twitch:c1']).toBeUndefined()
+    s().addItems([pin({ channelId: 'c1', messageId: 'b' })])
+    expect(s().pins['twitch:c1'].messageId).toBe('b')
+  })
+
+  it('switching a platform off removes its pins only', () => {
+    s().addItems([pin({ channelId: 'c2' }), pin({ platform: 'youtube', channelId: 'vid12345678', messageId: 'y1' })])
+    s().togglePlatform('twitch') // may turn it on or off depending on earlier tests; make sure it ends up off
+    if (s().enabled.twitch) s().togglePlatform('twitch')
+    expect(s().pins['twitch:c2']).toBeUndefined()
+    expect(s().pins['youtube:vid12345678']).toBeDefined()
   })
 })

@@ -15,6 +15,8 @@ import { useEffect } from 'react'
 import { ActivityPanel } from './components/ActivityPanel'
 import { ChatFeed } from './components/ChatFeed'
 import { Composer } from './components/Composer'
+import { PinnedBar } from './components/PinnedBar'
+import { StreamInfoBar } from './components/StreamInfoBar'
 import { PlatformBar } from './components/PlatformBar'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsPanel } from './components/settings/SettingsPanel'
@@ -23,12 +25,15 @@ import { subscribeToMain } from './store/chatStore'
 import { subscribeToLive } from './store/liveStore'
 import { useSettingsStore } from './store/settingsStore'
 import { useThemeSync } from './store/themeSync'
+import { subscribeToStreamInfo, useStreamInfoSync } from './store/streamInfoStore'
 import { subscribeToUpdates } from './store/updateStore'
 
 export default function App() {
   useEffect(() => subscribeToMain(), [])
   useEffect(() => subscribeToUpdates(), [])
   useEffect(() => subscribeToLive(), [])
+  useEffect(() => subscribeToStreamInfo(), [])
+  useStreamInfoSync()
   useThemeSync()
   // Ctrl +/-/0 are spotted by the main process (so the default menu can't grab them) and arrive here.
   useEffect(() => window.api.onZoomKey((action) => useSettingsStore.getState().zoom(action)), [])
@@ -42,7 +47,9 @@ export default function App() {
       <div className="titlebar">StreamChat Hub</div>
       <UpdateBanner />
       <PlatformBar />
+      <StreamInfoBar />
       <ActivityPanel />
+      <PinnedBar />
       <ChatFeed />
       <Toast />
       <Composer />

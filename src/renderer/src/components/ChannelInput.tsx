@@ -9,22 +9,22 @@
  * saves it to localStorage and, if the platform is on, applies it live (joins/leaves channels).
  * "Cleaned" uses `parseSources` (shared/channels.ts), which has the right rules for each platform.
  *
- * TWITCH SUGGESTIONS: when the go-live permission is on (Settings -> Accounts), the Twitch box is a
- * "combobox": it offers the followed channels that are live right now (with game and viewers).
- *   - typing filters the list (names starting with what you typed first); Tab takes the top match
- *   - Up/Down arrows move through the list, Enter picks the highlighted one, Esc closes it
- *   - clicking a row picks it; the "live" button on the right opens the whole list
- * Picking a channel saves it straight away (it joins at once if Twitch is on). Plain Enter never picks
- * a suggestion unless you moved to it with the arrows, so typing a full name and pressing Enter always
- * means what you typed. The matching rules are in lib/suggest.ts.
+ * TWITCH CHECKLIST: the Twitch box has a dropdown that is a CHECKLIST of channels. Checked rows (at the top) are the
+ * channels in the feed now; below them are the live channels you follow (needs the go-live permission, Settings ->
+ * Accounts), unchecked. Click a row to add that channel, click a checked row to take it out of the feed. The list
+ * stays open so several can be ticked in a row, and every click is saved at once (it joins or leaves right away if
+ * Twitch is on). You can still type: typing filters the list, and Enter always means "use what I typed".
+ *   - Up/Down arrows move through the rows, Enter ticks/unticks the highlighted one, Esc closes, Tab takes the top match
+ *   - the button on the right ("N live") opens and closes the list
+ * The row logic is in lib/suggest.ts (`buildChecklist`, `toggleChannel`).
  *
  * TO ADD A BOX FOR ANOTHER PLATFORM: add its label/placeholder to `COPY` below and render
  * `<ChannelInput platform="..." />` in PlatformBar.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { parseSources } from '../../../shared/channels'
-import type { LiveChannel, Platform } from '../../../shared/types'
-import { applySuggestion, suggest, tokenAt } from '../lib/suggest'
+import type { Platform } from '../../../shared/types'
+import { buildChecklist, toggleChannel, tokenAt } from '../lib/suggest'
 import { useChatStore } from '../store/chatStore'
 import { useLiveStore } from '../store/liveStore'
 
@@ -52,6 +52,9 @@ export function ChannelInput({ platform }: { platform: Platform }) {
   const saved = useChatStore((s) => s.channels[platform])
   const status = useChatStore((s) => s.status[platform])
   const setChannels = useChatStore((s) => s.setChannels)
+  // The checklist exists for Twitch. Live channels in it need the go-live permission; without it the list still shows (and
+  // lets you untick) the channels already in the box.
+  const canList = platform === 'twitch'
   const canSuggest = useChatStore((s) => platform === 'twitch' && s.auth.status === 'signed-in' && !!s.auth.canReadFollows)
   const live = useLiveStore((s) => s.live)
 
@@ -60,9 +63,9 @@ export function ChannelInput({ platform }: { platform: Platform }) {
   const [open, setOpen] = useState(false) // is the list showing?
   const [active, setActive] = useState(-1) // highlighted row, once the user moves with arrows/mouse
   const [navigated, setNavigated] = useState(false)
-  // Opened with the "N live" button: show EVERY live channel not already added, ignoring the typed text.
-  // Typing (or leaving the box) goes back to filtering by what is typed.
-  const [browse, setBrowse] = useState(false)
+  // True while the user is typing an entry: the half-typed name filters the list. Opening the list (click or button)
+  // or ticking a row makes it false: then the list shows everything and all channels in the box count as ticked.
+  const [typing, setTyping] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLUListElement>(null)
   const pendingCaret = useRef<number | undefined>(undefined)
@@ -78,15 +81,12 @@ export function ChannelInput({ platform }: { platform: Platform }) {
   /** Clean the text (drops invalid entries, tidies separators) and save it. */
   const save = (text: string) => setChannels(platform, clean(text))
 
-  // What the suggestions are computed from. Browsing looks at an empty entry after everything typed so far,
-  // so every channel already listed is left out and a pick is appended at the end instead of replacing text.
-  const base = draft.replace(/[\s,]+$/, '')
-  const view = browse ? { text: base ? `${base}, ` : '', caret: base ? base.length + 2 : 0 } : { text: draft, caret }
-  const token = tokenAt(view.text, view.caret)
-  const items: LiveChannel[] = canSuggest && open ? suggest(live, view.text, view.caret) : []
-  // With text typed, the best match is highlighted so Tab can take it; arrows/mouse move the highlight.
-  const current = navigated ? active : token.text && items.length ? 0 : -1
-  const showList = canSuggest && open && (items.length > 0 || !token.text) // an empty entry shows a note when nothing is left to offer
+  const token = tokenAt(draft, caret)
+  const rows = canList && open ? buildChecklist(canSuggest ? live : [], draft, caret, typing) : []
+  // While typing, the best unticked match is highlighted so Tab can take it; arrows/mouse move the highlight.
+  const firstOther = rows.findIndex((r) => !r.checked)
+  const current = navigated ? active : typing && token.text && firstOther >= 0 ? firstOther : -1
+  const showList = canList && open
 
   // After picking a suggestion, put the cursor after it (the text changed, so wait for the render).
   useLayoutEffect(() => {
@@ -100,22 +100,22 @@ export function ChannelInput({ platform }: { platform: Platform }) {
     if (current >= 0) document.getElementById(`${id}-opt-${current}`)?.scrollIntoView({ block: 'nearest' })
   }, [current, id])
 
-  const pick = (c: LiveChannel) => {
-    const next = applySuggestion(view.text, view.caret, c.login)
+  /** Tick or untick a channel. The list stays open and the change is saved at once. */
+  const toggle = (login: string) => {
+    const next = toggleChannel(draft, caret, login, typing)
     pendingCaret.current = next.caret
     setDraft(next.draft)
     setCaret(next.caret)
-    setOpen(false)
+    setTyping(false)
     setNavigated(false)
-    setBrowse(false)
     save(next.draft)
     input.current?.focus()
   }
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (canSuggest && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    if (canList && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault()
-      const count = suggest(live, view.text, view.caret).length
+      const count = (open ? rows : buildChecklist(canSuggest ? live : [], draft, caret, typing)).length
       if (!count) return
       if (!open) {
         setOpen(true)
@@ -134,17 +134,17 @@ export function ChannelInput({ platform }: { platform: Platform }) {
       setOpen(false)
       return
     }
-    // Tab takes the top suggestion (only while the list is showing and something is typed or chosen).
-    if (showList && e.key === 'Tab' && !e.shiftKey && items.length && (token.text || navigated)) {
+    // Tab takes the highlighted match (only while the list is showing and something is typed or chosen).
+    if (showList && e.key === 'Tab' && !e.shiftKey && rows.length && (token.text || navigated) && current >= 0 && rows[current]) {
       e.preventDefault()
-      pick(items[Math.max(current, 0)])
+      toggle(rows[current].login)
       return
     }
     if (e.key === 'Enter') {
-      // Enter picks only a row the user moved to; otherwise it means "use what I typed".
-      if (showList && navigated && current >= 0 && items[current]) {
+      // Enter ticks only a row the user moved to; otherwise it means "use what I typed".
+      if (showList && navigated && current >= 0 && rows[current]) {
         e.preventDefault()
-        pick(items[current])
+        toggle(rows[current].login)
       } else {
         e.currentTarget.blur() // blur() triggers the save
       }
@@ -156,7 +156,7 @@ export function ChannelInput({ platform }: { platform: Platform }) {
       <label className="channels-label" htmlFor={id}>
         {copy.label}
       </label>
-      <div className="channels-field" data-list={canSuggest}>
+      <div className="channels-field" data-list={canList}>
         <input
           id={id}
           ref={input}
@@ -165,7 +165,7 @@ export function ChannelInput({ platform }: { platform: Platform }) {
           placeholder={copy.placeholder}
           spellCheck={false}
           autoComplete="off"
-          {...(canSuggest && {
+          {...(canList && {
             role: 'combobox',
             'aria-expanded': showList,
             'aria-controls': `${id}-list`,
@@ -176,58 +176,61 @@ export function ChannelInput({ platform }: { platform: Platform }) {
             setDraft(e.target.value)
             setCaret(e.target.selectionStart ?? e.target.value.length)
             setNavigated(false)
-            setBrowse(false)
+            setTyping(true)
             setOpen(true)
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setOpen(true)
+            setTyping(false)
+          }}
           onBlur={() => {
             setOpen(false)
             setNavigated(false)
-            setBrowse(false)
+            setTyping(false)
             setDraft(clean(draft)) // show the tidied version
             save(draft)
           }}
           onKeyDown={onKeyDown}
         />
-        {canSuggest && (
+        {canList && (
           <button
             type="button"
             className="channels-toggle"
             tabIndex={-1}
-            aria-label={`Show live channels you follow (${live.length} live)`}
+            aria-label={canSuggest ? `Choose channels (${live.length} followed channels live)` : 'Choose channels'}
             onMouseDown={(e) => e.preventDefault()} // keep the input focused
             onClick={() => {
-              // Closes the list if it is showing; otherwise opens it with everything that is live.
-              const opening = !showList
-              setOpen(opening)
-              setBrowse(opening)
+              // Closes the list if it is showing; otherwise opens it with everything.
+              setOpen(!showList)
+              setTyping(false)
               setNavigated(false)
               input.current?.focus()
             }}
           >
-            {live.length > 0 && <span className="channels-live-dot" aria-hidden="true" />}
-            {live.length > 0 ? `${live.length} live` : ''} &#9662;
+            {canSuggest && live.length > 0 && <span className="channels-live-dot" aria-hidden="true" />}
+            {canSuggest && live.length > 0 ? `${live.length} live` : ''} &#9662;
           </button>
         )}
         {showList && (
-          <ul ref={list} id={`${id}-list`} className="suggest" role="listbox" aria-label="Live channels you follow">
-            {items.length === 0 && (
+          <ul ref={list} id={`${id}-list`} className="suggest" role="listbox" aria-multiselectable="true" aria-label="Channels in your feed">
+            {rows.length === 0 && (
               <li className="suggest-empty">
-                {live.length === 0 ? 'None of the channels you follow are live right now.' : 'Every live channel you follow is already in the box.'}
+                {canSuggest ? 'No channels yet, and none of the channels you follow are live right now. Type a name above.' : 'No channels yet. Type a name above.'}
               </li>
             )}
-            {items.map((c, i) => (
+            {rows.map((r, i) => (
               <li
-                key={c.login}
+                key={r.login}
                 id={`${id}-opt-${i}`}
                 className="suggest-item"
                 role="option"
-                aria-selected={i === current}
-                title={c.title}
+                aria-selected={r.checked}
+                data-active={i === current}
+                data-checked={r.checked}
                 onMouseDown={(e) => {
                   e.preventDefault() // don't blur the input before the click lands
-                  pick(c)
+                  toggle(r.login)
                 }}
                 onMouseMove={() => {
                   if (!navigated || active !== i) {
@@ -236,11 +239,19 @@ export function ChannelInput({ platform }: { platform: Platform }) {
                   }
                 }}
               >
-                <span className="suggest-name">{c.name}</span>
-                <span className="suggest-game">{c.game || 'No category'}</span>
-                <span className="suggest-viewers">{viewers(c.viewers)}</span>
+                <span className="suggest-check" aria-hidden="true">
+                  {r.checked ? '✓' : ''}
+                </span>
+                <span className="suggest-name">{r.name}</span>
+                <span className="suggest-game">{r.live ? r.game || 'No category' : 'Not live'}</span>
+                {r.live && <span className="suggest-viewers">{viewers(r.viewers)}</span>}
               </li>
             ))}
+            {!canSuggest && (
+              <li className="suggest-empty" role="presentation">
+                To also pick from the channels you follow, allow go-live alerts in Settings &rarr; Accounts.
+              </li>
+            )}
           </ul>
         )}
       </div>

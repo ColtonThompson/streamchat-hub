@@ -19,7 +19,7 @@
  *
  * HOW IT FITS: used by adapters/youtube/index.ts. Nothing else imports this file.
  */
-import type { Badge, ChatMessage, FeedItem, MessagePart } from '../../../shared/types'
+import type { Badge, ChatMessage, FeedItem, MessagePart, PinnedMessage } from '../../../shared/types'
 
 /** What the YouTube parser produces: a row, or a moderation change (live poll/prediction state is Twitch-only). */
 export type ChatItem = Exclude<FeedItem, { kind: 'activity' }>
@@ -194,8 +194,6 @@ const IGNORED = new Set([
   'liveChatModeChangeMessageRenderer',
   'liveChatBannerRenderer',
   'addLiveChatTickerItemAction', // the pinned Super Chat ticker; the Super Chat itself is also sent as a row
-  'addBannerToLiveChatCommand',
-  'removeBannerForLiveChatCommand',
   'showLiveChatActionPanelAction',
   'closeLiveChatActionPanelAction',
   'updateLiveChatPollAction',
@@ -287,6 +285,32 @@ function parseItem(item: unknown, ctx: Ctx): ChatMessage | undefined {
   }
 }
 
+// ------------------------------------------------------------------------------------ pinned message
+
+/**
+ * A pinned message arrives as a "banner": `addBannerToLiveChatCommand.bannerRenderer.liveChatBannerRenderer`
+ * with a header ("Pinned by <name>") and the pinned chat line inside `contents`. Banners that are not a pinned
+ * chat line (polls, redirects...) have other contents and are ignored.
+ */
+function parsePinnedBanner(body: Rec, ctx: Ctx): PinnedMessage | undefined {
+  const banner = rec(rec(body.bannerRenderer)?.liveChatBannerRenderer)
+  const inner = rec(rec(banner?.contents)?.liveChatTextMessageRenderer)
+  if (!banner || !inner) return undefined
+  const message = parseItem({ liveChatTextMessageRenderer: inner }, ctx)
+  if (!message) return undefined
+  const header = plainText(rec(rec(banner.header)?.liveChatBannerHeaderRenderer)?.text)
+  const pinnedBy = header.replace(/^pinned by\s*/i, '').trim()
+  return {
+    platform: 'youtube',
+    channelId: ctx.videoId,
+    ...(ctx.channelLabel ? { channelLabel: ctx.channelLabel } : {}),
+    messageId: message.id,
+    author: { name: message.author.name, color: message.author.color },
+    ...(pinnedBy ? { pinnedBy } : {}),
+    parts: message.parts
+  }
+}
+
 // ------------------------------------------------------------------------------------ actions
 
 /** Everything non-row that YouTube can say about removed content. */
@@ -344,6 +368,16 @@ export function parseActions(actions: unknown, ctx: Ctx): ChatItem[] {
       // "replace" swaps a placeholder for the real row (e.g. a held message that was approved): treat it as a new row.
       const message = parseItem(kind === 'addChatItemAction' ? body.item : body.replacementItem, ctx)
       if (message) out.push({ kind: 'message', message })
+      continue
+    }
+
+    if (kind === 'addBannerToLiveChatCommand') {
+      const pin = parsePinnedBanner(body, ctx)
+      if (pin) out.push({ kind: 'pin', pin })
+      continue
+    }
+    if (kind === 'removeBannerForLiveChatCommand') {
+      out.push({ kind: 'unpin', platform: 'youtube', channelId: ctx.videoId }) // one pin per chat, so this clears it
       continue
     }
 

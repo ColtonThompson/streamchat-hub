@@ -30,6 +30,8 @@ export interface Settings {
   liveAlerts: boolean
   /** Chat text size as a percentage (100 = normal). See shared/zoom.ts. */
   chatZoom: number
+  /** Show the stream's title and viewer count above the chat when reading a single stream. */
+  showStreamInfo: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,7 +40,8 @@ export const DEFAULT_SETTINGS: Settings = {
   timestampSeconds: false,
   blacklist: [],
   liveAlerts: true,
-  chatZoom: ZOOM_DEFAULT
+  chatZoom: ZOOM_DEFAULT,
+  showStreamInfo: true
 }
 
 export const MAX_BLACKLIST_TERMS = 200
@@ -79,10 +82,11 @@ export function sanitizeSettings(raw: unknown): Settings {
   }
   const liveAlerts = typeof r.liveAlerts === 'boolean' ? r.liveAlerts : DEFAULT_SETTINGS.liveAlerts
   const chatZoom = typeof r.chatZoom === 'number' ? clampZoom(r.chatZoom) : DEFAULT_SETTINGS.chatZoom
-  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts, chatZoom }
+  const showStreamInfo = typeof r.showStreamInfo === 'boolean' ? r.showStreamInfo : DEFAULT_SETTINGS.showStreamInfo
+  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts, chatZoom, showStreamInfo }
 }
 
 /** The fields that get saved (everything in `Settings`, nothing else from the store). */
 export function pickSettings(s: Settings): Settings {
-  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts, chatZoom: s.chatZoom }
+  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts, chatZoom: s.chatZoom, showStreamInfo: s.showStreamInfo }
 }

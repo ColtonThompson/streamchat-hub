@@ -77,6 +77,42 @@ export function parseLivePage(html: string): LiveInfo | undefined {
   return { videoId: canonical[1], title: title ? unescapeHtml(title) : undefined, owner: parseOwnerName(html) }
 }
 
+/** What a YouTube watch page says about a stream: its title, whether it is live now, and the viewers watching. */
+export interface WatchStats {
+  live: boolean
+  title?: string
+  viewers?: number
+  owner?: string
+}
+
+/**
+ * Read a watch page's HTML. Best effort: YouTube's page layout is not a public API. The viewer count comes
+ * from `originalViewCount` inside the live view-count block (a plain number as text), else from text such as
+ * "1,234 watching now".
+ */
+export function parseWatchStats(html: string): WatchStats {
+  const live = /"isLiveNow":true/.test(html)
+  const title = /<meta property="og:title" content="([^"]*)"/.exec(html)?.[1]
+  const block = /"videoViewCountRenderer":\{(.{0,600})/s.exec(html)?.[1] ?? ''
+  let viewers: number | undefined
+  const original = /"originalViewCount":"(\d+)"/.exec(block)?.[1]
+  if (original) viewers = Number(original)
+  else {
+    const text = /"(?:simpleText|text)":"([\d.,]+)(?:\s| )?(?:watching|viewers)/i.exec(block)?.[1]
+    if (text) viewers = Number(text.replace(/[.,]/g, ''))
+  }
+  return { live, title: title ? unescapeHtml(title) : undefined, viewers: live ? viewers : undefined, owner: parseOwnerName(html) }
+}
+
+/** The stats for a typed YouTube source: a video id, "@handle" or channel id. Throws on network problems. */
+export async function fetchStreamStats(source: string): Promise<WatchStats> {
+  const path = source.startsWith('@') ? `${source}/live` : source.startsWith('UC') && source.length === 24 ? `channel/${source}/live` : `watch?v=${encodeURIComponent(source)}`
+  const res = await fetch(`${WATCH}/${path}`, { headers: COMMON_HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) })
+  if (res.status === 404) throw new ChatUnavailableError(`${source} was not found on YouTube`)
+  if (!res.ok) throw new Error(`HTTP ${res.status} loading ${source}`)
+  return parseWatchStats(await res.text())
+}
+
 /** Best effort: the channel name behind a video id (for sources typed as a single stream). Never throws. */
 export async function findOwnerName(videoId: string): Promise<string | undefined> {
   try {

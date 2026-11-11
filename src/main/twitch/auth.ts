@@ -44,6 +44,8 @@ const MODERATION_SCOPES = ['moderator:manage:chat_messages', 'moderator:manage:b
 const POLL_SCOPES = ['channel:read:polls', 'channel:read:predictions']
 /** Lets us ask "which channels I follow are live right now?" (for go-live notifications). */
 const FOLLOW_SCOPES = ['user:read:follows']
+/** Reward redemptions in YOUR channel (Twitch only sends them to the broadcaster). */
+const REDEMPTION_SCOPES = ['channel:read:redemptions']
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -105,6 +107,11 @@ export class TwitchAuth {
     return POLL_SCOPES.every((s) => this.tokens?.scopes.includes(s))
   }
 
+  /** True when the token may read Channel Points redemptions (your own channel only). */
+  get canReadRedemptions(): boolean {
+    return REDEMPTION_SCOPES.every((s) => this.tokens?.scopes.includes(s))
+  }
+
   /** True when the token may list the live channels you follow. */
   get canReadFollows(): boolean {
     return FOLLOW_SCOPES.every((s) => this.tokens?.scopes.includes(s))
@@ -141,6 +148,7 @@ export class TwitchAuth {
         canModerate: this.canModerate,
         canReadPolls: this.canReadPolls,
         canReadFollows: this.canReadFollows,
+        canReadRedemptions: this.canReadRedemptions,
         error
       })
     } else {
@@ -181,6 +189,7 @@ export class TwitchAuth {
     if (options.moderation || this.canModerate) wanted.push(...MODERATION_SCOPES)
     if (options.polls || this.canReadPolls) wanted.push(...POLL_SCOPES)
     if (options.follows || this.canReadFollows) wanted.push(...FOLLOW_SCOPES)
+    if (options.redemptions || this.canReadRedemptions) wanted.push(...REDEMPTION_SCOPES)
     const scopes = wanted.join(' ')
 
     try {

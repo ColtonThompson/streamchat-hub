@@ -20,6 +20,7 @@ export const EVENT_META: Record<EventType, { label: string; color: string }> = {
   member: { label: 'Member', color: '#4ade80' },
   poll: { label: 'Poll', color: '#38bdf8' },
   prediction: { label: 'Prediction', color: '#f472b6' },
+  redemption: { label: 'Reward', color: '#2dd4bf' },
   moderation: { label: 'Mod', color: '#8d86a3' },
   notice: { label: 'Notice', color: '#8d86a3' }
 }

@@ -22,8 +22,8 @@ describe('sanitizeSettings', () => {
   })
 
   it('keeps valid values', () => {
-    const s = sanitizeSettings({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130 })
-    expect(s).toEqual({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130 })
+    const s = sanitizeSettings({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130, showStreamInfo: false })
+    expect(s).toEqual({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130, showStreamInfo: false })
   })
 
   it('accepts the "system" theme', () => {
@@ -90,9 +90,18 @@ describe('chat zoom setting', () => {
   })
 })
 
+describe('show stream info setting', () => {
+  it('is on by default and ignores non-booleans', () => {
+    expect(DEFAULT_SETTINGS.showStreamInfo).toBe(true)
+    expect(sanitizeSettings({}).showStreamInfo).toBe(true)
+    expect(sanitizeSettings({ showStreamInfo: false }).showStreamInfo).toBe(false)
+    expect(sanitizeSettings({ showStreamInfo: 'no' }).showStreamInfo).toBe(true)
+  })
+})
+
 describe('pickSettings', () => {
   it('returns only the saved fields', () => {
     const picked = pickSettings({ ...DEFAULT_SETTINGS, extra: 1 } as never)
-    expect(Object.keys(picked).sort()).toEqual(['blacklist', 'chatZoom', 'liveAlerts', 'theme', 'timestampSeconds', 'timestamps'])
+    expect(Object.keys(picked).sort()).toEqual(['blacklist', 'chatZoom', 'liveAlerts', 'showStreamInfo', 'theme', 'timestampSeconds', 'timestamps'])
   })
 })

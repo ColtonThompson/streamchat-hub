@@ -57,6 +57,8 @@ export interface EventSubOptions {
   /** One event arrived. `event` is Twitch's payload, unparsed. */
   onNotification: (type: string, event: unknown) => void
   onState: (state: EventSubState) => void
+  /** After each round of subscribing: what Twitch accepted or refused, per event type (for diagnostics). */
+  onSubscribed?: (results: { type: string; ok: boolean; error?: string }[]) => void
   url?: string
 }
 
@@ -232,6 +234,7 @@ export class EventSubClient {
   private async subscribeAll(socket: SocketLike, sessionId: string): Promise<void> {
     const results = await Promise.all(this.opts.types.map((t) => this.opts.subscribe(t, sessionId).catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }) as ActionResult)))
     if (this.stopped || socket !== this.socket) return // stopped, or replaced while we were asking
+    this.opts.onSubscribed?.(results.map((r, i) => ({ type: this.opts.types[i], ok: r.ok, ...(r.error ? { error: r.error } : {}) })))
     if (results.some((r) => r.ok)) {
       this.attempt = 0
       this.opts.onState({ state: 'connected' })

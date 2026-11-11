@@ -189,3 +189,64 @@ export function parseActivityEvent(type: string, event: unknown): ActivityUpdate
       return undefined
   }
 }
+
+// ------------------------------------------------------------------------ reward redemptions
+
+/**
+ * Viewers spending Channel Points. Needs the "channel:read:redemptions" permission and, like polls, only works
+ * for your OWN channel. Each redemption becomes one feed row; there is no live card.
+ */
+export const REDEMPTION_EVENTS = [
+  'channel.channel_points_custom_reward_redemption.add',
+  'channel.channel_points_automatic_reward_redemption.add'
+] as const
+
+/** Twitch's built-in ("automatic") rewards, named the way viewers see them. */
+const AUTOMATIC_REWARDS: Record<string, string> = {
+  send_highlighted_message: 'Highlight My Message',
+  single_message_bypass_sub_mode: 'Send a Message in Sub-Only Mode',
+  random_sub_emote_unlock: 'Unlock a Random Sub Emote',
+  chosen_sub_emote_unlock: 'Choose an Emote to Unlock',
+  chosen_modified_sub_emote_unlock: 'Choose a Modified Emote to Unlock',
+  message_effect: 'Message Effects',
+  gigantify_an_emote: 'Gigantify an Emote',
+  celebration: 'On-Screen Celebration'
+}
+
+/** One redemption event -> a feed row, or undefined for another type or an unusable payload. */
+export function parseRedemptionEvent(type: string, event: unknown): ChatMessage | undefined {
+  const e = rec(event)
+  const id = str(e?.id)
+  if (!e || !id) return undefined
+  const user = str(e.user_name) ?? str(e.user_login) ?? 'Someone'
+  const channelId = (str(e.broadcaster_user_login) ?? '').toLowerCase()
+  const at = time(e.redeemed_at) ?? Date.now()
+
+  let reward: string
+  let cost: number
+  let text: string
+  if (type === 'channel.channel_points_custom_reward_redemption.add') {
+    const r = rec(e.reward)
+    reward = str(r?.title) ?? 'a reward'
+    cost = num(r?.cost) ?? 0
+    text = str(e.user_input) ?? ''
+  } else if (type === 'channel.channel_points_automatic_reward_redemption.add') {
+    const r = rec(e.reward)
+    const kind = str(r?.type) ?? ''
+    reward = AUTOMATIC_REWARDS[kind] ?? (kind ? kind.replace(/_/g, ' ') : 'a reward')
+    cost = num(r?.channel_points) ?? 0
+    text = str(rec(e.message)?.text) ?? ''
+  } else {
+    return undefined
+  }
+
+  return {
+    id: `redemption-${id}`,
+    platform: 'twitch',
+    channelId,
+    author: { id: str(e.user_id), name: user, badges: [] },
+    parts: text.trim() ? [{ type: 'text', value: text.trim() }] : [],
+    timestamp: at,
+    event: { type: 'redemption', title: `${user} redeemed “${reward}” · ${n(cost)} pts` }
+  }
+}

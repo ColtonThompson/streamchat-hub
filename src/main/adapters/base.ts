@@ -14,7 +14,7 @@
  *   3. Register it in adapters/index.ts. (The platform's name must already be in `Platform`,
  *      shared/types.ts.) That's all: the UI needs no changes to show its messages.
  */
-import type { ChatMessage, ModerationEvent, Platform, PlatformStatus } from '../../shared/types'
+import type { ChatMessage, ModerationEvent, PinnedMessage, Platform, PlatformStatus } from '../../shared/types'
 
 /** The callbacks an adapter uses to report what is happening. */
 export interface AdapterEmit {
@@ -29,6 +29,10 @@ export interface AdapterEmit {
    * need that id, so adapters call this as soon as they learn it.
    */
   channelReady?(channel: string, platformId: string): void
+  /** The channel pinned a message (or changed/replaced its pin). Optional. */
+  pin?(pin: PinnedMessage): void
+  /** The channel's pin was removed or expired. Optional. */
+  unpin?(channelId: string): void
 }
 
 export interface ChatAdapter {

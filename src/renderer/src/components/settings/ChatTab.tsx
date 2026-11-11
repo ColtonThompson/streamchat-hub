@@ -43,6 +43,10 @@ export function ChatTab() {
   const setSeconds = useSettingsStore((s) => s.setTimestampSeconds)
   const style = timeStyleOf(mode, seconds)
 
+  // ---- stream info ----
+  const showInfo = useSettingsStore((s) => s.showStreamInfo)
+  const setShowInfo = useSettingsStore((s) => s.setShowStreamInfo)
+
   // ---- blacklist ----
   const blacklist = useSettingsStore((s) => s.blacklist)
   const addTerm = useSettingsStore((s) => s.addBlacklistTerm)
@@ -76,6 +80,18 @@ export function ChatTab() {
 
   return (
     <>
+      <section className="setting">
+        <h3 className="setting-title">Stream info</h3>
+        <label className="check">
+          <input type="checkbox" checked={showInfo} onChange={(e) => setShowInfo(e.target.checked)} />
+          Show stream title and viewer count
+        </label>
+        <p className="setting-help">
+          Appears above the chat when you are reading just one Twitch channel or one YouTube stream. Turn it off if you would rather
+          not see viewer counts; nothing is looked up while it is off. Twitch needs you to be signed in.
+        </p>
+      </section>
+
       <section className="setting">
         <h3 className="setting-title">Timestamps</h3>
         <p className="setting-help">Show the time each message was sent, in your local time zone.</p>

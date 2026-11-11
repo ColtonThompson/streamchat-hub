@@ -6,7 +6,7 @@
 import { scenario } from '../helpers/scenario'
 
 await scenario('Channel suggestions (Twitch box)', async (check) => {
-  const { tokenAt, suggest, applySuggestion } = await import('../../src/renderer/src/lib/suggest')
+  const { tokenAt, suggest, applySuggestion, buildChecklist, toggleChannel } = await import('../../src/renderer/src/lib/suggest')
   const L = (login: string, viewers: number, extra: object = {}) => ({ login, name: login[0].toUpperCase() + login.slice(1), game: 'Hades II', title: 't', viewers, ...extra })
   const live = [L('pixelwitch', 500), L('pixie', 1500), L('apexpro', 90000), L('witchhunt', 40), L('bob', 10), L('ネコ', 5, { name: 'ネコ' })]
 
@@ -35,4 +35,29 @@ await scenario('Channel suggestions (Twitch box)', async (check) => {
   { const r = applySuggestion('pi, foo', 2, 'pixie'); check('middle: replaces only the entry, no suffix', r.draft === 'pixie, foo' && r.caret === 5, r) }
   { const r = applySuggestion('foo, ', 5, 'bob'); check('empty entry at end inserts', r.draft === 'foo, bob, ' && r.caret === 10, r) }
   { const r = applySuggestion('', 0, 'bob'); check('empty box', r.draft === 'bob, ' && r.caret === 5, r) }
+
+  // ---------------------------------------------------------------- the checklist
+  const logins = (rows: any[]) => rows.map((r) => `${r.checked ? '+' : '-'}${r.login}`).join()
+  check('settled: channels in the box come first, ticked, then the other live channels by viewers',
+    logins(buildChecklist(live, 'bob, zed', 8, false)) === '+bob,+zed,-apexpro,-pixie,-pixelwitch,-witchhunt,-ネコ', logins(buildChecklist(live, 'bob, zed', 8, false)))
+  { const r = buildChecklist(live, 'bob, zed', 8, false); check('a channel in the box that is live shows its info; one that is not is marked not live',
+    r[0].live === true && r[0].viewers === 10 && r[0].game === 'Hades II' && r[1].live === false && r[1].viewers === 0, r.slice(0, 2)) }
+  check('a typed full name counts as ticked once settled (clicking into the box)', logins(buildChecklist(live, 'pixie', 5, false)).startsWith('+pixie,-apexpro'), logins(buildChecklist(live, 'pixie', 5, false)))
+  check('typing: the half-typed name filters and is not counted as ticked',
+    logins(buildChecklist(live, 'bob, pix', 8, true)) === '-pixie,-pixelwitch', logins(buildChecklist(live, 'bob, pix', 8, true)))
+  check('typing: ticked channels that match the filter stay in the list', logins(buildChecklist(live, 'pixie, pix', 10, true)) === '+pixie,-pixelwitch', logins(buildChecklist(live, 'pixie, pix', 10, true)))
+  check('empty box + nothing live -> no rows', buildChecklist([], '', 0, false).length === 0)
+  check('without live data the box contents are still listed (so they can be unticked)', logins(buildChecklist([], 'a, b', 4, false)) === '+a,+b')
+
+  { const r = toggleChannel('', 0, 'bob', false); check('settled, add to an empty box', r.draft === 'bob, ' && r.caret === 5, r) }
+  { const r = toggleChannel('foo', 3, 'bob', false); check('settled, add appends after the existing ones', r.draft === 'foo, bob, ' && r.caret === 10, r) }
+  { const r = toggleChannel('foo, bob, ', 10, 'bob', false); check('clicking a ticked channel removes it', r.draft === 'foo, ' && r.caret === 5, r) }
+  { const r = toggleChannel('bob', 3, 'bob', false); check('removing the last channel leaves an empty box', r.draft === '' && r.caret === 0, r) }
+  { const r = toggleChannel('foo, pi', 7, 'pixie', true); check('typing: adding replaces the half-typed name', r.draft === 'foo, pixie, ' && r.caret === 12, r) }
+  { const r = toggleChannel('foo, bob, pi', 12, 'bob', true); check('typing: unticking keeps what is being typed', r.draft === 'foo, pi, ', r) }
+  { const r = toggleChannel('Foo, BOB', 8, 'bob', false); check('matching ignores case and tidies the rest', r.draft === 'foo, ', r) }
+  { let t = { draft: '', caret: 0 }; for (const l of ['a', 'b', 'c']) t = toggleChannel(t.draft, t.caret, l, false)
+    check('several clicks in a row build the list', t.draft === 'a, b, c, ', t)
+    t = toggleChannel(t.draft, t.caret, 'b', false)
+    check('...and unticking the middle one keeps the others in order', t.draft === 'a, c, ', t) }
 })

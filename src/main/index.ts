@@ -24,10 +24,12 @@ import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
 import { parseSources } from '../shared/channels'
 import { zoomActionForKey } from '../shared/zoom'
-import { IPC, type LiveChannel, type LoginOptions, type ModerationCommand, type Platform, type WindowTheme } from '../shared/types'
+import { IPC, type LiveChannel, type LoginOptions, type ModerationCommand, type Platform, type StreamInfoTarget, type WindowTheme } from '../shared/types'
 import { MessageBus } from './bus'
 import { APP_ID } from './appId'
+import { fetchStreamStats } from './adapters/youtube/innertube'
 import { LiveWatcher } from './livewatch'
+import { makeInfoFetcher, StreamInfoWatcher } from './streaminfo'
 import { TwitchAuth } from './twitch/auth'
 import { Helix } from './twitch/helix'
 import { UpdateService } from './updater'
@@ -123,6 +125,12 @@ function createWindow(): void {
   }
   const offLiveAuth = twitchAuth.onChange(syncLiveWatch)
 
+  // --- title and viewer count of the single stream being read (only while the UI asks for it) ---
+  const streamInfo = new StreamInfoWatcher({
+    fetch: makeInfoFetcher({ twitchStream: (login) => followHelix.getStream(login), youtubeStats: fetchStreamStats }),
+    onInfo: (info) => !win.isDestroyed() && win.webContents.send(IPC.streamInfoChanged, info)
+  })
+
   // --- app updates (only active in an installed build; in `npm run dev` it is switched off) ---
   const updates = new UpdateService({
     updater: autoUpdater,
@@ -154,7 +162,8 @@ function createWindow(): void {
     void twitchAuth.login({
       moderation: options?.moderation === true,
       polls: options?.polls === true,
-      follows: options?.follows === true
+      follows: options?.follows === true,
+      redemptions: options?.redemptions === true
     })
   })
   ipcMain.handle(IPC.authCancel, () => twitchAuth.cancelLogin())
@@ -164,6 +173,11 @@ function createWindow(): void {
   ipcMain.handle(IPC.updatesCheck, () => updates.check())
   ipcMain.handle(IPC.updatesInstall, () => updates.install())
 
+  ipcMain.handle(IPC.streamInfoWatch, (_e, target: StreamInfoTarget | null) => {
+    // From the UI, so check it: one platform we know, and a source that is plain channel text.
+    const ok = !!target && (target.platform === 'twitch' || target.platform === 'youtube') && typeof target.source === 'string' && /^[@A-Za-z0-9_.-]{1,40}$/.test(target.source)
+    streamInfo.watch(ok ? { platform: target.platform, source: target.source } : null)
+  })
   ipcMain.handle(IPC.liveGet, () => liveList)
   ipcMain.handle(IPC.alertsTest, () => showNotification('StreamChat Hub', 'Go-live alerts will look like this.'))
   ipcMain.handle(IPC.liveAlerts, (_e, value: boolean) => {
@@ -193,6 +207,7 @@ function createWindow(): void {
     updates.dispose()
     offLiveAuth()
     liveWatch.stop()
+    streamInfo.stop()
     bus?.dispose()
     bus = undefined
     // Handlers are registered per window, so remove them (a re-opened window registers them again).
@@ -211,6 +226,7 @@ function createWindow(): void {
       IPC.liveAlerts,
       IPC.alertsTest,
       IPC.liveGet,
+      IPC.streamInfoWatch,
       IPC.onTop,
       IPC.windowTheme
     ]

@@ -168,6 +168,21 @@ export class Helix {
     return out
   }
 
+  /**
+   * One channel's current stream, or `null` when it is offline. `undefined` = not signed in.
+   * `GET /streams?user_login=` needs a user token but no special scope.
+   */
+  async getStream(login: string): Promise<{ title: string; viewers: number; game: string } | null | undefined> {
+    const res = await this.request(`/streams?user_login=${encodeURIComponent(login)}&first=1`)
+    if (!res) return undefined
+    if (!res.ok) throw new HelixError(res.status, await this.describeFailure(res))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = await res.json().catch(() => ({}))
+    const s = Array.isArray(body.data) ? body.data[0] : undefined
+    if (!s || s.type !== 'live') return null
+    return { title: String(s.title ?? ''), viewers: Number(s.viewer_count) || 0, game: String(s.game_name ?? '') }
+  }
+
   // --------------------------------------------------------------------------- EventSub
 
   /**
@@ -176,11 +191,13 @@ export class Helix {
    * must BE the broadcaster. Twitch answers 202 when accepted.
    */
   async subscribeEventSub(type: string, broadcasterId: string, sessionId: string): Promise<ActionResult> {
+    // Almost every type is version 1; automatic reward redemptions are version 2.
+    const version = type === 'channel.channel_points_automatic_reward_redemption.add' ? '2' : '1'
     const res = await this.request('/eventsub/subscriptions', {
       method: 'POST',
       body: JSON.stringify({
         type,
-        version: '1',
+        version,
         condition: { broadcaster_user_id: broadcasterId },
         transport: { method: 'websocket', session_id: sessionId }
       })
@@ -190,9 +207,27 @@ export class Helix {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body: any = await res.json().catch(() => ({}))
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: 'Twitch refused: enable polls & predictions in Settings → Accounts, and use your own channel.' }
+      return { ok: false, error: 'Twitch refused: enable polls & predictions (or reward redemptions) in Settings → Accounts, and use your own channel.' }
     }
     return { ok: false, error: body.message ?? `Twitch returned ${res.status}` }
+  }
+
+  // ---------------------------------------------------------------------------- pinned chat
+
+  /**
+   * The message pinned in a channel's chat: the raw `data[0]` object, `null` when nothing is pinned.
+   * `GET /chat/pins`. Needs `moderator_id` = the signed-in user, who must be the broadcaster or a moderator
+   * there (scope `moderator:manage:chat_messages`, which the moderation permission already includes).
+   * Twitch has no push event for pins, so the app asks periodically (see twitch/pins.ts).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getPinnedChat(broadcasterId: string, moderatorId: string): Promise<any | null | undefined> {
+    const res = await this.request(`/chat/pins?broadcaster_id=${encodeURIComponent(broadcasterId)}&moderator_id=${encodeURIComponent(moderatorId)}`)
+    if (!res) return undefined
+    if (!res.ok) throw new HelixError(res.status, await this.describeFailure(res))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = await res.json().catch(() => ({}))
+    return Array.isArray(body.data) && body.data.length ? body.data[0] : null
   }
 
   // ------------------------------------------------------------------------- moderation

@@ -24,6 +24,7 @@ import {
   type ChannelActivity,
   type ChatMessage,
   type FeedItem,
+  type PinnedMessage,
   type Platform,
   type PlatformStatus
 } from '../../../shared/types'
@@ -43,6 +44,11 @@ export const activityKey = (a: ChannelActivity) => `${a.kind}:${a.id}`
  * back, so we remember them. Lives outside the store because nothing needs to re-render when it changes.
  */
 const dismissedActivities = new Set<string>()
+/** Pins the user closed (`pinKey|messageId`): a pin stays closed, but a NEW pin in the same channel shows again. */
+const dismissedPins = new Set<string>()
+
+/** The key a channel's pin is stored under. */
+export const pinKey = (platform: Platform, channelId: string) => `${platform}:${channelId}`
 
 /** How long a toast notice stays on screen. */
 const TOAST_MS = 5000
@@ -64,6 +70,8 @@ interface ChatState {
   auth: AuthState
   /** Live polls and predictions in your channel (see ActivityPanel), by `activityKey`. */
   activities: Record<string, ChannelActivity>
+  /** The message each channel has pinned (see PinnedBar), by `pinKey`. */
+  pins: Record<string, PinnedMessage>
   /** Whether event rows (subs, raids, mod notes...) are shown. */
   showEvents: boolean
   /** A short notice at the bottom of the feed, or undefined when there is none. */
@@ -78,6 +86,8 @@ interface ChatState {
   toggleEvents: () => void
   /** Close a poll/prediction card. It stays closed even if Twitch sends more updates for it. */
   dismissActivity: (key: string) => void
+  /** Close a pinned-message bar until that channel pins something different. */
+  dismissPin: (key: string) => void
   clear: () => void
   setAuth: (auth: AuthState) => void
   showToast: (text: string, kind?: Toast['kind']) => void
@@ -117,6 +127,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   alwaysOnTop: false,
   auth: { status: 'signed-out', configured: true },
   activities: {},
+  pins: {},
   showEvents: true,
   toast: undefined,
 
@@ -125,7 +136,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => {
       let messages = s.messages
       let activities = s.activities
+      let pins = s.pins
       let pending: ChatMessage[] = [] // new messages not yet appended
+      // A message id is only ever shown once, whatever path it arrived by (a repeated notification, a reconnect
+      // replaying history). Built on first use, because most batches have nothing to check.
+      let known: Set<string> | undefined
       const commit = () => {
         if (pending.length) messages = messages.concat(pending)
         pending = []
@@ -134,7 +149,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // so we append what we have before applying each moderation update.
       for (const item of items) {
         if (item.kind === 'message') {
+          known ??= new Set(messages.map((m) => m.id))
+          if (known.has(item.message.id)) continue
+          known.add(item.message.id)
           pending.push(item.message)
+        } else if (item.kind === 'pin') {
+          const key = pinKey(item.pin.platform, item.pin.channelId)
+          if (!dismissedPins.has(`${key}|${item.pin.messageId}`)) pins = { ...pins, [key]: item.pin }
+        } else if (item.kind === 'unpin') {
+          const key = pinKey(item.platform, item.channelId)
+          if (key in pins) {
+            const { [key]: _gone, ...rest } = pins
+            pins = rest
+          }
         } else if (item.kind === 'activity') {
           // Live state: the newest update for a poll/prediction replaces the older one.
           const key = activityKey(item.activity)
@@ -149,6 +176,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: messages.length > MAX_MESSAGES ? messages.slice(messages.length - MAX_MESSAGES) : messages
       }
       if (activities !== s.activities) next.activities = pruneActivities(activities)
+      if (pins !== s.pins) next.pins = pins
       return next
     }),
 
@@ -159,7 +187,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({
       enabled: { ...s.enabled, [platform]: enabled },
       // Switching Twitch off stops poll updates, so an "active" card would never finish: clear them.
-      ...(platform === 'twitch' && !enabled ? { activities: {} } : {})
+      ...(platform === 'twitch' && !enabled ? { activities: {} } : {}),
+      // A platform that is switched off no longer reports its pins, so drop them.
+      ...(!enabled ? { pins: Object.fromEntries(Object.entries(s.pins).filter(([, p]) => p.platform !== platform)) } : {})
     }))
     // Tell the main process to connect/disconnect, passing the cleaned channel list.
     void window.api.setPlatformEnabled(platform, enabled, parseSources(platform, get().channels[platform]))
@@ -196,6 +226,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // Without the polls permission nothing can arrive, and a card left from before sign-out would be stale.
+  dismissPin: (key) => {
+    const pin = get().pins[key]
+    if (pin) dismissedPins.add(`${key}|${pin.messageId}`)
+    set((s) => {
+      const { [key]: _gone, ...rest } = s.pins
+      return { pins: rest }
+    })
+  },
+
   setAuth: (auth) => set((s) => ({ auth, activities: auth.status === 'signed-in' && auth.canReadPolls ? s.activities : {} })),
 
   showToast: (text, kind = 'info') => {

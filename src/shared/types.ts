@@ -83,6 +83,7 @@ export type EventType =
   | 'member' // a YouTube channel membership (new member or membership milestone)
   | 'poll' // a Twitch poll started or finished
   | 'prediction' // a Twitch prediction started, locked or finished
+  | 'redemption' // a viewer spent Channel Points on a reward (Twitch)
   | 'moderation'
   | 'notice'
 
@@ -244,10 +245,32 @@ export type ChannelActivity =
  * What the main process pushes to the UI (in batches, see bus.ts):
  * a new row, a change to rows that are already on screen, or a new state of a live poll/prediction.
  */
+/**
+ * A message the channel has PINNED to the top of its chat. Shown in a bar above the feed (PinnedBar.tsx),
+ * not as a row. There is at most one per channel; a newer pin replaces the older one.
+ */
+export interface PinnedMessage {
+  platform: Platform
+  /** Same meaning as `ChatMessage.channelId` (Twitch login; YouTube video id). */
+  channelId: string
+  /** Readable name for the channel (YouTube: @handle or channel name). */
+  channelLabel?: string
+  /** The pinned message's id. A different id = a different pin. */
+  messageId: string
+  author: { name: string; color?: string }
+  /** Who pinned it, when the platform says (a moderator, or the broadcaster). */
+  pinnedBy?: string
+  parts: MessagePart[]
+  /** When the pin expires (ms since 1970). Absent: it stays until the stream ends or it is unpinned. */
+  endsAt?: number
+}
+
 export type FeedItem =
   | { kind: 'message'; message: ChatMessage }
   | { kind: 'moderation'; action: ModerationEvent }
   | { kind: 'activity'; activity: ChannelActivity }
+  | { kind: 'pin'; pin: PinnedMessage }
+  | { kind: 'unpin'; platform: Platform; channelId: string }
 
 // ============================================================================================
 // Sign-in
@@ -261,6 +284,8 @@ export interface LoginOptions {
   polls?: boolean
   /** See which channels you follow are live (go-live notifications). */
   follows?: boolean
+  /** Read Channel Points reward redemptions in your own channel. */
+  redemptions?: boolean
 }
 
 export interface AuthState {
@@ -276,6 +301,8 @@ export interface AuthState {
   canReadPolls?: boolean
   /** True when the token includes the permission to see which followed channels are live. */
   canReadFollows?: boolean
+  /** True when the token includes the permission to read Channel Points redemptions in your own channel. */
+  canReadRedemptions?: boolean
   /** While `pending`: the code the user types in at twitch.tv/activate. */
   userCode?: string
   verificationUri?: string
@@ -326,6 +353,25 @@ export interface LiveChannel {
   viewers: number
 }
 
+/** Which single stream the UI wants title/viewer info for. `source` is a Twitch login or a YouTube source (see shared/channels.ts). */
+export interface StreamInfoTarget {
+  platform: 'twitch' | 'youtube'
+  source: string
+}
+
+/** What is known about that stream right now. */
+export interface StreamInfo extends StreamInfoTarget {
+  /** Is the stream live? When false there is usually no title. */
+  live: boolean
+  title?: string
+  /** Current viewers (YouTube: "watching now"). Absent when the platform didn't say. */
+  viewers?: number
+  /** Twitch category / game. */
+  game?: string
+  /** A short explanation shown instead of details (e.g. "Sign in to Twitch to see this"). */
+  note?: string
+}
+
 export interface HubApi {
   /** Subscribe to new rows and changes. Returns an "unsubscribe" function. */
   onBatch(cb: (items: FeedItem[]) => void): () => void
@@ -337,6 +383,11 @@ export interface HubApi {
   setAlwaysOnTop(value: boolean): Promise<void>
   /** Turn desktop notifications for followed channels going live on or off. */
   setLiveAlerts(value: boolean): Promise<void>
+  /** Which stream's title and viewer count to follow: one stream, or `null` for none (nothing is fetched then). */
+  streamInfo: {
+    watch(target: StreamInfoTarget | null): Promise<void>
+    onChange(cb: (info: StreamInfo | null) => void): () => void
+  }
   /** Show a sample desktop notification. Resolves false if the system can't show notifications. */
   testNotification(): Promise<boolean>
   /** Recolour the native title-bar area to match the current theme. */
@@ -382,6 +433,8 @@ export const IPC = {
   liveGet: 'follows:live',
   liveChanged: 'follows:live-changed',
   windowTheme: 'window:theme',
+  streamInfoWatch: 'streaminfo:watch',
+  streamInfoChanged: 'streaminfo:changed',
   zoomKey: 'chat:zoom-key',
   send: 'chat:send',
   moderate: 'chat:moderate',

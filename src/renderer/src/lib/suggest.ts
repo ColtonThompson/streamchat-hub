@@ -64,3 +64,64 @@ export function applySuggestion(draft: string, caret: number, login: string): { 
   const insert = atEnd ? `${login}, ` : login
   return { draft: draft.slice(0, tok.start) + insert + draft.slice(tok.end), caret: tok.start + insert.length }
 }
+
+// ============================================================================================
+// The checklist shown under the Twitch box
+// ============================================================================================
+
+/** One row of the checklist. Checked rows are the channels already in the box; unchecked ones are live channels you follow. */
+export interface ChecklistRow {
+  login: string
+  name: string
+  game: string
+  viewers: number
+  /** Is the channel live right now? (Only known for channels you follow, with the go-live permission.) */
+  live: boolean
+  checked: boolean
+}
+
+/**
+ * The rows to show: first the channels in the box (checked, in the order typed), then the other live channels you
+ * follow (unchecked, most viewers first).
+ *
+ * `typing` is true while the user is in the middle of typing an entry. Then the entry at the cursor is only a
+ * partial name: it is NOT counted as in the box, and it filters the list. Otherwise (the list was opened by click or
+ * button) everything in the box counts and nothing filters.
+ */
+export function buildChecklist(live: LiveChannel[], draft: string, caret: number, typing: boolean): ChecklistRow[] {
+  const tok = tokenAt(draft, caret)
+  const selected = parseChannels(typing ? draft.slice(0, tok.start) + ' ' + draft.slice(tok.end) : draft)
+  const q = typing ? tok.text.toLowerCase().replace(/^#/, '') : ''
+
+  const checked: ChecklistRow[] = []
+  for (const login of selected) {
+    const l = live.find((x) => x.login === login)
+    const name = l?.name ?? login
+    if (q && !login.includes(q) && !name.toLowerCase().includes(q)) continue
+    checked.push({ login, name, game: l?.game ?? '', viewers: l?.viewers ?? 0, live: !!l, checked: true })
+  }
+
+  // The remaining live channels: `suggest` already leaves out everything in the box and ranks by the filter.
+  const base = draft.replace(/[\s,]+$/, '')
+  const view = typing ? { text: draft, caret } : { text: base ? `${base}, ` : '', caret: base ? base.length + 2 : 0 }
+  const others = suggest(live, view.text, view.caret).map((c) => ({ login: c.login, name: c.name, game: c.game, viewers: c.viewers, live: true, checked: false }))
+  return [...checked, ...others]
+}
+
+/**
+ * Click on a row: add the channel if it is not in the box, remove it if it is. Returns the new text and cursor.
+ * Adding while typing replaces the partial entry; otherwise it is appended. Removing tidies the text to a clean list.
+ */
+export function toggleChannel(draft: string, caret: number, login: string, typing: boolean): { draft: string; caret: number } {
+  const tok = tokenAt(draft, caret)
+  const selected = parseChannels(typing ? draft.slice(0, tok.start) + ' ' + draft.slice(tok.end) : draft)
+  if (selected.includes(login)) {
+    const rest = parseChannels(draft).filter((l) => l !== login)
+    const next = rest.length ? `${rest.join(', ')}, ` : ''
+    return { draft: next, caret: next.length }
+  }
+  if (typing) return applySuggestion(draft, caret, login)
+  const base = draft.replace(/[\s,]+$/, '')
+  const next = base ? `${base}, ${login}, ` : `${login}, `
+  return { draft: next, caret: next.length }
+}
