@@ -15,6 +15,7 @@ import { useEffect } from 'react'
 import { ActivityPanel } from './components/ActivityPanel'
 import { ChatFeed } from './components/ChatFeed'
 import { Composer } from './components/Composer'
+import { PermissionBanner } from './components/PermissionBanner'
 import { PinnedBar } from './components/PinnedBar'
 import { StreamInfoBar } from './components/StreamInfoBar'
 import { PlatformBar } from './components/PlatformBar'
@@ -46,6 +47,7 @@ export default function App() {
       {/* The drag region lets you move the window by grabbing this strip (see .titlebar in styles.css). */}
       <div className="titlebar">StreamChat Hub</div>
       <UpdateBanner />
+      <PermissionBanner />
       <PlatformBar />
       <StreamInfoBar />
       <ActivityPanel />

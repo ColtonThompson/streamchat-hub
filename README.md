@@ -271,6 +271,14 @@ and the CI secrets. macOS/Linux builds aren't set up (macOS auto-update addition
 
 ---
 
+### Twitch permissions
+
+Settings -> Accounts lists every optional Twitch permission (moderation tools, polls & predictions, reward redemptions, go-live alerts)
+with a tick or cross, what it enables, and an **Allow** button when it is off (**Allow all** asks for every missing one in one go).
+A bar above the chat also speaks up when it matters: if you are reading your own channel without the polls / redemptions
+permissions it says so, with **Allow**, **Details** and **Not now** (remembered). Which feature needs which permission is defined
+in `src/renderer/src/lib/permissions.ts`.
+
 ### Channel checklist in the Twitch box
 
 The dropdown under **Twitch channels** is a checklist. Channels already in your feed are ticked at the top; below them are the live
