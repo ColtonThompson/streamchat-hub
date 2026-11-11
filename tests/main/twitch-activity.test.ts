@@ -177,7 +177,7 @@ await scenario('Twitch polls & predictions, EventSub, sign-in permissions, messa
     ;(globalThis as any).fetch = async (url: any, init?: any) => {
       const u = String(url)
       const json = (o: object, status = 200) => new Response(JSON.stringify(o), { status })
-      if (u.endsWith('/device')) { requested.push(init.body.get('scopes')); granted = init.body.get('scopes'); return json({ device_code: 'd', user_code: 'U', verification_uri: 'https://x', expires_in: 60, interval: 0 }) }
+      if (u.endsWith('/device')) { requested.push(init.body.get('scopes')); granted = init.body.get('scopes'); return json({ device_code: 'd', user_code: 'U', verification_uri: 'https://www.twitch.tv/activate', expires_in: 60, interval: 0 }) }
       if (u.endsWith('/token')) return json({ access_token: 'tok', refresh_token: 'ref', expires_in: 3600 })
       if (u.endsWith('/validate')) return json({ user_id: '42', login: 'pixelwitch', expires_in: 3600, scopes: granted.split(' ') })
       return json({})

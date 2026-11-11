@@ -27,7 +27,7 @@ Twitch on. Reading chat needs no login.
 3. Copy the **Client ID**. Copy `.env.example` to `.env` and paste it in.
 4. Restart `npm run dev`, click **Sign in to Twitch**, enter the code on the page that opens.
 
-For the **mod toolbar** click **Enable moderation tools** after signing in. That re-authorizes with
+For the **moderator panel** click **Enable moderation tools** after signing in. That re-authorizes with
 extra permissions (delete messages, time out, ban). It only works in channels where you are the
 broadcaster or a moderator.
 
@@ -91,7 +91,7 @@ src/
       store/chatStore.ts  All UI state (Zustand): messages, platforms on/off, auth, toast...
       lib/                Small helpers: platform colours, event colours, moderation logic, @mentions
       components/         PlatformBar, ChannelInput, ChatFeed, MessageRow,
-                          ModToolbar, Toast, Composer, ActivityPanel (poll/prediction cards),
+                          UserPanel (click a message: history + ban/timeout), Toast, Composer, ActivityPanel (poll/prediction cards),
                           UpdateBanner, settings/ (Appearance, Chat, Accounts, About tabs)
       styles.css          All styling (heavily commented; read its header)
 ```
@@ -119,7 +119,7 @@ Twitch ──WebSocket──> adapters/twitch/index.ts
 **You pressing a button (screen -> platform):**
 
 ```
-ModToolbar "10m" ─> window.api.moderate(cmd) ─IPC─> main/index.ts ─> bus.moderate (validates)
+UserPanel "T" ─> window.api.moderate(cmd) ─IPC─> main/index.ts ─> bus.moderate (validates)
                                                     ─> helix.ban ──HTTPS──> Twitch API
 Twitch then announces the timeout on chat (CLEARCHAT) ─> parse.ts ─> ModerationEvent
    ─> store.addItems ─> applyModeration marks that user's messages as removed
@@ -170,9 +170,24 @@ shows an error toast and nothing else.
 Edit the variables at the top of `src/renderer/src/styles.css`. Platform colours are in
 `renderer/src/lib/platforms.ts`, event colours in `renderer/src/lib/events.ts`.
 
-### Change the timeout buttons
-Edit `TIMEOUT_PRESETS` at the top of `components/ModToolbar.tsx` (`{ label: '5m', seconds: 300 }`).
-Twitch allows 1 second to 2 weeks (1,209,600).
+### Emote picker
+The smiley button beside the message box opens a searchable list of emotes for the channel you are sending to: the
+channel's, Twitch's, and 7TV / BTTV / FFZ. Click one to insert it at the cursor. Turn on **Your emotes** (Settings →
+Accounts → Twitch; asks for the `user:read:emotes` permission) to list only the emotes you can actually use there,
+including other channels you subscribe to. Logic: `main/emotes/picker.ts`, `components/EmotePicker.tsx`.
+
+### Settings → Accounts
+Each platform is a sub-tab, so a platform's own settings have the whole page.
+
+### Mention alerts
+Settings → Chat → Mention alerts: when someone types `@yourname` in any chat you get a sound and, if the app is in
+the background, a desktop notification. Your Twitch name is included automatically; add other names (such as a
+YouTube @handle) in the box. Logic is in `lib/pings.ts`, the alert in `lib/pingNotifier.ts`.
+
+### Moderating a chatter
+With moderation tools on, click a message to open that person's messages from this session. Your own and the channel owner's messages open a history-only view. Hotkeys: **T** timeout,
+**B** ban (press twice to confirm), **U** unban, **Esc** close; each message also has a Delete button.
+The timeout length is a setting (Settings → Chat → Moderation; Twitch allows 1 second to 2 weeks).
 
 ### Show a new Twitch event
 1. Find its `msg-id` (log `line` in `adapters/twitch/index.ts` `handle()` while it happens).
@@ -270,6 +285,14 @@ certificate (an EV/OV certificate, or Azure Trusted Signing); add it to `electro
 and the CI secrets. macOS/Linux builds aren't set up (macOS auto-update additionally requires signing).
 
 ---
+
+### Twitch permissions
+
+Settings -> Accounts lists every optional Twitch permission (moderation tools, polls & predictions, reward redemptions, go-live alerts)
+with a tick or cross, what it enables, and an **Allow** button when it is off (**Allow all** asks for every missing one in one go).
+A bar above the chat also speaks up when it matters: if you are reading your own channel without the polls / redemptions
+permissions it says so, with **Allow**, **Details** and **Not now** (remembered). Which feature needs which permission is defined
+in `src/renderer/src/lib/permissions.ts`.
 
 ### Channel checklist in the Twitch box
 
@@ -403,5 +426,20 @@ jsdom plus Testing Library), `main/index.ts` window wiring, and the real YouTube
 - 7TV live emote updates (currently refreshed every 15 minutes)
 - More settings (which events to show, whether to show removed messages by default); the panel itself exists
 - Transparent always-on-top overlay window and an OBS browser-source view
-- Per-channel "am I a moderator here?" detection (the toolbar currently shows for any channel once
+- Per-channel "am I a moderator here?" detection (the panel currently opens for any channel once
   moderation tools are enabled; Twitch refuses the action where you aren't a mod and the reason is shown)
+
+
+## Security notes
+
+- **Window lock-down** (`src/main/security.ts`, `src/main/index.ts`): the window can only show the app's own page; chat
+  links open in the browser only if they are `http(s)`; IPC requests are accepted only from that page and their
+  arguments are re-validated; the only browser permission granted is notifications; the Content-Security-Policy in
+  `src/renderer/index.html` forbids plugins, `<base>`, form posts and frames.
+- **Keep Electron current.** Electron supports only its latest three major versions, and older ones receive no fixes.
+  Dependabot (`.github/dependabot.yml`) opens weekly update pull requests; upgrade one major at a time and run
+  `npm test` and the app each time. Check `npm audit` before every release.
+- **Sign the installer** before wide release (see "Releasing"): the updater trusts whatever is attached to your GitHub
+  release, so protect that repository (2FA, branch and tag protection) and prefer a code-signing certificate.
+- Twitch tokens are encrypted with the OS (Electron `safeStorage`) and re-checked with Twitch every hour; nothing is
+  saved if the OS cannot encrypt.

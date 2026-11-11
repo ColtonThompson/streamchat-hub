@@ -16,8 +16,9 @@
  * PERMISSIONS ("scopes"): Twitch only lets us do what the user approved. We ask in two tiers so the
  *   approval screen only lists what is needed:
  *     - basic:      send chat messages
- *     - moderation: also delete messages, time out and ban (the mod toolbar)
+ *     - moderation: also delete messages, time out and ban (the moderator user panel)
  *     - polls:      also read polls and predictions in the user's OWN channel
+ *     - emotes:     also list the emotes the user can use (emote picker)
  *   Asking for one more tier never drops a tier already granted (see `login`).
  *
  * HOW IT FITS: main/index.ts creates one TwitchAuth, forwards its state changes to the UI, and
@@ -27,6 +28,7 @@
  *   re-authorize) or want a different token storage strategy.
  */
 import { app, safeStorage, shell } from 'electron'
+import { isTwitchLoginUrl } from '../security'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { AuthState, LoginOptions } from '../../shared/types'
@@ -35,7 +37,7 @@ const ID_BASE = 'https://id.twitch.tv/oauth2'
 
 /** Permission to send chat messages. Always requested. */
 const BASIC_SCOPES = ['user:write:chat']
-/** Permissions for the mod toolbar. Only requested when the user clicks "Enable moderation tools". */
+/** Permissions for the moderator panel. Only requested when the user clicks "Enable moderation tools". */
 const MODERATION_SCOPES = ['moderator:manage:chat_messages', 'moderator:manage:banned_users']
 /**
  * Permissions to receive poll and prediction updates. Twitch only grants these for the signed-in
@@ -46,6 +48,8 @@ const POLL_SCOPES = ['channel:read:polls', 'channel:read:predictions']
 const FOLLOW_SCOPES = ['user:read:follows']
 /** Reward redemptions in YOUR channel (Twitch only sends them to the broadcaster). */
 const REDEMPTION_SCOPES = ['channel:read:redemptions']
+/** Lets the emote picker list exactly the emotes YOU can use in a channel. */
+const EMOTE_SCOPES = ['user:read:emotes']
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -59,6 +63,31 @@ interface Tokens {
   login: string
   /** The permissions Twitch says this token has. Twitch is the source of truth, not what we asked for. */
   scopes: string[]
+}
+
+/**
+ * Token encryption. Electron 45 deprecated the synchronous safeStorage methods (removed in 46) in favour of async ones,
+ * which can read data saved by the old ones. Older Electron versions (and the test stand-in) only have the sync ones.
+ */
+type AsyncStorage = {
+  isAsyncEncryptionAvailable?: () => Promise<boolean>
+  encryptStringAsync?: (s: string) => Promise<Buffer>
+  decryptStringAsync?: (b: Buffer) => Promise<{ shouldReEncrypt: boolean; result: string }>
+}
+const asyncStorage = safeStorage as unknown as AsyncStorage
+
+async function encryptionAvailable(): Promise<boolean> {
+  return asyncStorage.isAsyncEncryptionAvailable ? await asyncStorage.isAsyncEncryptionAvailable() : safeStorage.isEncryptionAvailable()
+}
+async function encrypt(text: string): Promise<Buffer> {
+  return asyncStorage.encryptStringAsync ? asyncStorage.encryptStringAsync(text) : safeStorage.encryptString(text)
+}
+async function decrypt(data: Buffer): Promise<{ text: string; reEncrypt: boolean }> {
+  if (asyncStorage.decryptStringAsync) {
+    const r = await asyncStorage.decryptStringAsync(data)
+    return { text: r.result, reEncrypt: r.shouldReEncrypt }
+  }
+  return { text: safeStorage.decryptString(data), reEncrypt: false }
 }
 
 /** POST a form to Twitch's login servers and return the status plus the decoded JSON body. */
@@ -88,6 +117,10 @@ export class TwitchAuth {
   private loginRun = 0
   /** If a refresh is already in flight, everyone awaits the same one instead of starting another. */
   private refreshing?: Promise<boolean>
+  /** Twitch requires apps that keep a session to re-check the token every hour (see `revalidate`). */
+  private revalidateTimer?: NodeJS.Timeout
+  /** The OS says the saved tokens should be encrypted again with a newer key (done once after start-up). */
+  private needsReEncrypt = false
   private file = join(app.getPath('userData'), 'twitch-auth.bin')
 
   // ---------------------------------------------------------------------------- read-only info
@@ -97,7 +130,7 @@ export class TwitchAuth {
     return this.tokens?.userId
   }
 
-  /** True if the token has every permission the mod toolbar needs. */
+  /** True if the token has every permission the moderator panel needs. */
   get canModerate(): boolean {
     return MODERATION_SCOPES.every((s) => this.tokens?.scopes.includes(s))
   }
@@ -110,6 +143,11 @@ export class TwitchAuth {
   /** True when the token may read Channel Points redemptions (your own channel only). */
   get canReadRedemptions(): boolean {
     return REDEMPTION_SCOPES.every((s) => this.tokens?.scopes.includes(s))
+  }
+
+  /** True when the token may list the emotes you can use. */
+  get canReadEmotes(): boolean {
+    return EMOTE_SCOPES.every((s) => this.tokens?.scopes.includes(s))
   }
 
   /** True when the token may list the live channels you follow. */
@@ -149,6 +187,7 @@ export class TwitchAuth {
         canReadPolls: this.canReadPolls,
         canReadFollows: this.canReadFollows,
         canReadRedemptions: this.canReadRedemptions,
+        canReadEmotes: this.canReadEmotes,
         error
       })
     } else {
@@ -166,7 +205,28 @@ export class TwitchAuth {
     this.tokens = stored
     // validate() also refreshes our knowledge of the scopes; refresh() is the fallback for an expired token.
     const valid = (await this.validate()) || (await this.refresh())
-    if (valid) this.publishCurrent()
+    if (valid) {
+      if (this.needsReEncrypt) await this.persist().catch(() => {}) // refresh the encryption key, as Electron advises
+      this.publishCurrent()
+      this.startRevalidating()
+    }
+  }
+
+  /** Once an hour: ask Twitch whether the token is still good (and which permissions it has), as Twitch requires. */
+  private startRevalidating(): void {
+    clearInterval(this.revalidateTimer)
+    this.revalidateTimer = setInterval(() => void this.revalidate(), 60 * 60_000)
+    this.revalidateTimer.unref?.()
+  }
+
+  private async revalidate(): Promise<void> {
+    if (!this.tokens) return
+    const before = [...this.tokens.scopes].sort().join(' ')
+    if (await this.validate()) {
+      if (this.tokens && [...this.tokens.scopes].sort().join(' ') !== before) this.publishCurrent() // e.g. revoked in Twitch settings
+      return
+    }
+    await this.refresh() // an expired or revoked token is renewed, or the session is dropped with a message
   }
 
   // ------------------------------------------------------------------------- login and logout
@@ -190,6 +250,7 @@ export class TwitchAuth {
     if (options.polls || this.canReadPolls) wanted.push(...POLL_SCOPES)
     if (options.follows || this.canReadFollows) wanted.push(...FOLLOW_SCOPES)
     if (options.redemptions || this.canReadRedemptions) wanted.push(...REDEMPTION_SCOPES)
+    if (options.emotes || this.canReadEmotes) wanted.push(...EMOTE_SCOPES)
     const scopes = wanted.join(' ')
 
     try {
@@ -198,7 +259,9 @@ export class TwitchAuth {
       if (!d.ok) throw new Error(d.body.message ?? `Twitch returned ${d.status}`)
       const { device_code, user_code, verification_uri, expires_in, interval } = d.body
       this.publish({ status: 'pending', userCode: user_code, verificationUri: verification_uri })
-      void shell.openExternal(verification_uri) // Step 2: open the approval page in the browser.
+      // Step 2: open the approval page in the browser, but only if Twitch really sent a twitch.tv address.
+      if (!isTwitchLoginUrl(verification_uri)) throw new Error('Twitch sent an unexpected sign-in address, so it was not opened.')
+      void shell.openExternal(verification_uri)
 
       // Step 3: poll until the user approves, the code expires, or this attempt is superseded.
       const deadline = Date.now() + expires_in * 1000
@@ -218,7 +281,7 @@ export class TwitchAuth {
           continue // a brief network hiccup: just poll again
         }
         if (r.ok) {
-          await this.completeLogin(r.body)
+          await this.completeLogin(r.body, wanted)
           return
         }
         const msg = String(r.body.message ?? '')
@@ -248,6 +311,7 @@ export class TwitchAuth {
   /** Forget the session: delete saved tokens and tell Twitch to revoke the access token. */
   async logout(): Promise<void> {
     this.loginRun++ // also stops a login that is still waiting for approval
+    clearInterval(this.revalidateTimer)
     const token = this.tokens?.accessToken
     this.tokens = undefined
     await fs.rm(this.file, { force: true })
@@ -256,7 +320,7 @@ export class TwitchAuth {
   }
 
   /** Called when Twitch approves the code: store the tokens, learn who the user is, and save. */
-  private async completeLogin(body: { access_token: string; refresh_token?: string; expires_in: number }): Promise<void> {
+  private async completeLogin(body: { access_token: string; refresh_token?: string; expires_in: number }, requested: string[]): Promise<void> {
     this.tokens = {
       accessToken: body.access_token,
       refreshToken: body.refresh_token,
@@ -268,7 +332,12 @@ export class TwitchAuth {
     // validate() fills in userId, login and scopes.
     if (!(await this.validate())) throw new Error('Twitch accepted the code but the token could not be verified.')
     await this.persist()
-    this.publishCurrent()
+    this.startRevalidating()
+    // Say plainly if Twitch handed back less than we asked for (a permission left unticked, or a name Twitch rejects).
+    const granted = this.tokens.scopes
+    const missing = requested.filter((s) => !granted.includes(s))
+    console.log(`[auth] signed in as ${this.tokens.login}; permissions: ${granted.join(' ') || '(none)'}${missing.length ? `; NOT granted: ${missing.join(' ')}` : ''}`)
+    this.publishCurrent(missing.length ? `Twitch did not grant: ${missing.join(', ')}. Try again and approve every permission listed.` : undefined)
   }
 
   // ---------------------------------------------------------------------------------- tokens
@@ -304,6 +373,8 @@ export class TwitchAuth {
         refresh_token: t.refreshToken
       })
       if (!r.ok) {
+        // A Twitch outage or rate limit (5xx / 429) says nothing about the login itself: keep it and try again later.
+        if (r.status >= 500 || r.status === 429) return false
         await this.dropSession('Your Twitch session ended. Sign in again.')
         return false
       }
@@ -348,6 +419,7 @@ export class TwitchAuth {
 
   /** The session is unusable: forget it and show the reason. */
   private async dropSession(error: string): Promise<void> {
+    clearInterval(this.revalidateTimer)
     this.tokens = undefined
     await fs.rm(this.file, { force: true })
     this.publish({ status: 'signed-out', error })
@@ -360,14 +432,16 @@ export class TwitchAuth {
    * save NOTHING rather than store tokens as plain text; the user just signs in each launch.
    */
   private async persist(): Promise<void> {
-    if (!this.tokens || !safeStorage.isEncryptionAvailable()) return
-    await fs.writeFile(this.file, safeStorage.encryptString(JSON.stringify(this.tokens)))
+    if (!this.tokens || !(await encryptionAvailable())) return
+    await fs.writeFile(this.file, await encrypt(JSON.stringify(this.tokens)))
   }
 
   private async readStored(): Promise<Tokens | undefined> {
     try {
-      if (!safeStorage.isEncryptionAvailable()) return undefined
-      const t = JSON.parse(safeStorage.decryptString(await fs.readFile(this.file))) as Tokens
+      if (!(await encryptionAvailable())) return undefined
+      const { text, reEncrypt } = await decrypt(await fs.readFile(this.file))
+      const t = JSON.parse(text) as Tokens
+      this.needsReEncrypt = reEncrypt
       return { ...t, scopes: t.scopes ?? [] } // older saves had no `scopes`
     } catch {
       return undefined // missing or unreadable file: treat as signed out

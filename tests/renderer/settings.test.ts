@@ -22,8 +22,8 @@ describe('sanitizeSettings', () => {
   })
 
   it('keeps valid values', () => {
-    const s = sanitizeSettings({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130, showStreamInfo: false })
-    expect(s).toEqual({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130, showStreamInfo: false })
+    const s = sanitizeSettings({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130, showStreamInfo: false, timeoutSeconds: 120, pingAlerts: false, pingSound: false, pingNames: ['myhandle'] })
+    expect(s).toEqual({ theme: 'daylight', timestamps: '24h', timestampSeconds: true, blacklist: ['spam'], liveAlerts: false, chatZoom: 130, showStreamInfo: false, timeoutSeconds: 120, pingAlerts: false, pingSound: false, pingNames: ['myhandle'] })
   })
 
   it('accepts the "system" theme', () => {
@@ -80,6 +80,13 @@ describe('normalizeTerm', () => {
 
 describe('chat zoom setting', () => {
   it('defaults to 100 and repairs bad values', () => {
+    expect(DEFAULT_SETTINGS.pingAlerts).toBe(true)
+    expect(sanitizeSettings({ pingNames: ['@MyHandle', 'MYHANDLE', 'ab', 5, 'bad name'] }).pingNames).toEqual(['myhandle'])
+    expect(sanitizeSettings({ pingNames: 'x' }).pingNames).toEqual([])
+    expect(DEFAULT_SETTINGS.timeoutSeconds).toBe(600)
+    expect(sanitizeSettings({ timeoutSeconds: 'x' }).timeoutSeconds).toBe(600)
+    expect(sanitizeSettings({ timeoutSeconds: 0 }).timeoutSeconds).toBe(1)
+    expect(sanitizeSettings({ timeoutSeconds: 1e9 }).timeoutSeconds).toBe(1209600)
     expect(DEFAULT_SETTINGS.chatZoom).toBe(100)
     expect(sanitizeSettings({}).chatZoom).toBe(100)
     expect(sanitizeSettings({ chatZoom: 'big' }).chatZoom).toBe(100)
@@ -102,6 +109,6 @@ describe('show stream info setting', () => {
 describe('pickSettings', () => {
   it('returns only the saved fields', () => {
     const picked = pickSettings({ ...DEFAULT_SETTINGS, extra: 1 } as never)
-    expect(Object.keys(picked).sort()).toEqual(['blacklist', 'chatZoom', 'liveAlerts', 'showStreamInfo', 'theme', 'timestampSeconds', 'timestamps'])
+    expect(Object.keys(picked).sort()).toEqual(['blacklist', 'chatZoom', 'liveAlerts', 'pingAlerts', 'pingNames', 'pingSound', 'showStreamInfo', 'theme', 'timeoutSeconds', 'timestampSeconds', 'timestamps'])
   })
 })

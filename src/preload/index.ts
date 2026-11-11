@@ -50,6 +50,9 @@ const api: HubApi = {
   setWindowTheme: (theme) => ipcRenderer.invoke(IPC.windowTheme, theme),
   sendChat: (platform, channel, text) => ipcRenderer.invoke(IPC.send, platform, channel, text),
   moderate: (command) => ipcRenderer.invoke(IPC.moderate, command),
+  emotes: {
+    list: (platform, channel) => ipcRenderer.invoke(IPC.emotesList, platform, channel)
+  },
 
   // ---- sign-in -----------------------------------------------------------------------------
   auth: {

@@ -43,6 +43,13 @@ describe('privmsgToChatMessage', () => {
     ])
   })
 
+  it('accepts v2 emote ids but ignores ids that could change the image address', () => {
+    const ok = chat('emotes=emotesv2_9ab12:0-4', 'Kappa').parts[0] as { type: string; url: string }
+    expect(ok.type).toBe('emote')
+    expect(ok.url).toContain('/emotesv2_9ab12/')
+    expect(chat('emotes=ev%il?x\\y:0-4', 'Kappa').parts.every((p) => p.type !== 'emote')).toBe(true)
+  })
+
   it('orders emotes left to right even though Twitch groups them by emote', () => {
     const m = chat('emotes=25:6-10/1902:0-4', 'Keepo Kappa') // Kappa (25) is listed first but sits second
     expect(m.parts.filter((p) => p.type === 'emote').map((p) => p.value)).toEqual(['Keepo', 'Kappa'])

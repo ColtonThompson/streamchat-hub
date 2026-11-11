@@ -265,6 +265,21 @@ export interface PinnedMessage {
   endsAt?: number
 }
 
+/** One emote in the picker: the word to type and its image. */
+export interface EmoteEntry {
+  name: string
+  url: string
+}
+
+/** A titled section of the emote picker. */
+export interface EmoteGroup {
+  id: string
+  title: string
+  /** A short explanation shown under the title. */
+  note?: string
+  emotes: EmoteEntry[]
+}
+
 export type FeedItem =
   | { kind: 'message'; message: ChatMessage }
   | { kind: 'moderation'; action: ModerationEvent }
@@ -278,7 +293,7 @@ export type FeedItem =
 
 /** Extra permission groups to ask Twitch for when signing in. Anything already granted is kept. */
 export interface LoginOptions {
-  /** Delete messages, time out and ban (the mod toolbar). */
+  /** Delete messages, time out and ban (the moderator user panel). */
   moderation?: boolean
   /** Read the polls and predictions of your own channel. */
   polls?: boolean
@@ -286,6 +301,8 @@ export interface LoginOptions {
   follows?: boolean
   /** Read Channel Points reward redemptions in your own channel. */
   redemptions?: boolean
+  /** Know which emotes you can use in each channel (the emote picker). */
+  emotes?: boolean
 }
 
 export interface AuthState {
@@ -303,6 +320,8 @@ export interface AuthState {
   canReadFollows?: boolean
   /** True when the token includes the permission to read Channel Points redemptions in your own channel. */
   canReadRedemptions?: boolean
+  /** True when the token includes the permission to list the emotes you can use (emote picker). */
+  canReadEmotes?: boolean
   /** While `pending`: the code the user types in at twitch.tv/activate. */
   userCode?: string
   verificationUri?: string
@@ -388,6 +407,10 @@ export interface HubApi {
     watch(target: StreamInfoTarget | null): Promise<void>
     onChange(cb: (info: StreamInfo | null) => void): () => void
   }
+  /** The emotes to offer in the picker for a channel, in sections (empty sections are left out). */
+  emotes: {
+    list(platform: Platform, channel: string): Promise<EmoteGroup[]>
+  }
   /** Show a sample desktop notification. Resolves false if the system can't show notifications. */
   testNotification(): Promise<boolean>
   /** Recolour the native title-bar area to match the current theme. */
@@ -435,6 +458,7 @@ export const IPC = {
   windowTheme: 'window:theme',
   streamInfoWatch: 'streaminfo:watch',
   streamInfoChanged: 'streaminfo:changed',
+  emotesList: 'emotes:list',
   zoomKey: 'chat:zoom-key',
   send: 'chat:send',
   moderate: 'chat:moderate',

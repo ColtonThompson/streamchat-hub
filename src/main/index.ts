@@ -20,11 +20,12 @@
  *
  * CHANGE IT WHEN: you add a new UI -> main request (add a handler below) or change window behaviour.
  */
-import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { parseSources } from '../shared/channels'
 import { zoomActionForKey } from '../shared/zoom'
-import { IPC, type LiveChannel, type LoginOptions, type ModerationCommand, type Platform, type StreamInfoTarget, type WindowTheme } from '../shared/types'
+import { isAppUrl, isTrustedSender, safeExternalUrl } from './security'
+import { IPC, PLATFORMS, type LiveChannel, type LoginOptions, type ModerationCommand, type Platform, type StreamInfoTarget, type WindowTheme } from '../shared/types'
 import { MessageBus } from './bus'
 import { APP_ID } from './appId'
 import { fetchStreamStats } from './adapters/youtube/innertube'
@@ -43,7 +44,8 @@ function showNotification(title: string, body: string, url?: string): boolean {
   }
   const n = new Notification({ title, body })
   n.on('click', () => {
-    if (url) void shell.openExternal(url) // links never open inside the app window
+    const safe = safeExternalUrl(url)
+    if (safe) void shell.openExternal(safe) // links never open inside the app window; only http(s) ones open at all
   })
   n.on('failed', (_e, error) => console.warn('[alerts] Windows refused the notification:', error))
   n.show()
@@ -83,9 +85,32 @@ function createWindow(): void {
 
   // Links clicked in chat open in the user's real browser, never inside the app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    const safe = safeExternalUrl(url) // http(s) only: a chat link must never start another program (checklist item 15)
+    if (safe) void shell.openExternal(safe)
     return { action: 'deny' }
   })
+
+  // The window may only ever show the app's own page (checklist item 13). A normal click on a chat link is a new-window
+  // request (handled above); anything that tries to navigate the window itself, or redirects it, is blocked.
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  const block = (event: { preventDefault: () => void }, url: string): void => {
+    if (!isAppUrl(url, devUrl)) event.preventDefault()
+  }
+  win.webContents.on('will-navigate', (event, url) => block(event, url))
+  win.webContents.on('will-redirect', (event, url) => block(event, url))
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault()) // the app never uses <webview>
+
+  // Requests from the UI are accepted only from the app's own page (checklist item 17).
+  const handle = <A extends unknown[], R>(channel: string, fn: (e: IpcMainInvokeEvent, ...args: A) => R): void => {
+    ipcMain.handle(channel, (e, ...args) => {
+      if (!isTrustedSender(e.senderFrame, devUrl)) {
+        console.warn(`[security] ignored ${channel} from an untrusted frame`)
+        return undefined
+      }
+      return fn(e, ...(args as A))
+    })
+  }
+  const knownPlatform = (p: unknown): p is Platform => typeof p === 'string' && (PLATFORMS as string[]).includes(p)
 
   // --- sign-in and the chat pipeline -------------------------------------------------------
   const twitchAuth = new TwitchAuth()
@@ -144,18 +169,23 @@ function createWindow(): void {
   // Each handler's name matches an entry in `IPC` (shared/types.ts) and a method in preload/index.ts.
 
   // Turn a platform on/off. Channel names are cleaned again here because IPC input is untrusted.
-  ipcMain.handle(IPC.toggle, (_e, platform: Platform, enabled: boolean, channels: string[]) =>
-    bus?.setEnabled(platform, enabled, parseSources(platform, (channels ?? []).join(' ')))
+  handle(IPC.toggle, (_e, platform: Platform, enabled: boolean, channels: string[]) =>
+    knownPlatform(platform) ? bus?.setEnabled(platform, enabled === true, parseSources(platform, (Array.isArray(channels) ? channels : []).join(' '))) : undefined
   )
   // Change which channels are being read while connected.
-  ipcMain.handle(IPC.channels, (_e, platform: Platform, channels: string[]) =>
-    bus?.setChannels(platform, parseSources(platform, (channels ?? []).join(' ')))
+  handle(IPC.channels, (_e, platform: Platform, channels: string[]) =>
+    knownPlatform(platform) ? bus?.setChannels(platform, parseSources(platform, (Array.isArray(channels) ? channels : []).join(' '))) : undefined
   )
-  ipcMain.handle(IPC.send, (_e, platform: Platform, channel: string, text: string) => bus?.send(platform, channel, text))
-  ipcMain.handle(IPC.moderate, (_e, command: ModerationCommand) => bus?.moderate(command))
+  handle(IPC.send, (_e, platform: Platform, channel: string, text: string) =>
+    knownPlatform(platform) && typeof channel === 'string' && typeof text === 'string' ? bus?.send(platform, channel, text) : { ok: false, error: 'Invalid request.' }
+  )
+  handle(IPC.moderate, (_e, command: ModerationCommand) => bus?.moderate(command))
+  handle(IPC.emotesList, (_e, platform: Platform, channel: string) =>
+    knownPlatform(platform) && typeof channel === 'string' && /^[A-Za-z0-9_]{1,25}$/.test(channel) ? (bus?.listEmotes(platform, channel) ?? []) : []
+  )
 
-  ipcMain.handle(IPC.authGet, () => twitchAuth.getState())
-  ipcMain.handle(IPC.authLogin, (_e, options?: LoginOptions) => {
+  handle(IPC.authGet, () => twitchAuth.getState())
+  handle(IPC.authLogin, (_e, options?: LoginOptions) => {
     // Login runs until the user approves in the browser (minutes). Don't make the UI wait on it:
     // progress arrives through the IPC.authState push above. The options come from the UI, so only
     // real `true` values count.
@@ -163,33 +193,34 @@ function createWindow(): void {
       moderation: options?.moderation === true,
       polls: options?.polls === true,
       follows: options?.follows === true,
-      redemptions: options?.redemptions === true
+      redemptions: options?.redemptions === true,
+      emotes: options?.emotes === true
     })
   })
-  ipcMain.handle(IPC.authCancel, () => twitchAuth.cancelLogin())
-  ipcMain.handle(IPC.authLogout, () => twitchAuth.logout())
+  handle(IPC.authCancel, () => twitchAuth.cancelLogin())
+  handle(IPC.authLogout, () => twitchAuth.logout())
 
-  ipcMain.handle(IPC.updatesGet, () => updates.getState())
-  ipcMain.handle(IPC.updatesCheck, () => updates.check())
-  ipcMain.handle(IPC.updatesInstall, () => updates.install())
+  handle(IPC.updatesGet, () => updates.getState())
+  handle(IPC.updatesCheck, () => updates.check())
+  handle(IPC.updatesInstall, () => updates.install())
 
-  ipcMain.handle(IPC.streamInfoWatch, (_e, target: StreamInfoTarget | null) => {
+  handle(IPC.streamInfoWatch, (_e, target: StreamInfoTarget | null) => {
     // From the UI, so check it: one platform we know, and a source that is plain channel text.
     const ok = !!target && (target.platform === 'twitch' || target.platform === 'youtube') && typeof target.source === 'string' && /^[@A-Za-z0-9_.-]{1,40}$/.test(target.source)
     streamInfo.watch(ok ? { platform: target.platform, source: target.source } : null)
   })
-  ipcMain.handle(IPC.liveGet, () => liveList)
-  ipcMain.handle(IPC.alertsTest, () => showNotification('StreamChat Hub', 'Go-live alerts will look like this.'))
-  ipcMain.handle(IPC.liveAlerts, (_e, value: boolean) => {
+  handle(IPC.liveGet, () => liveList)
+  handle(IPC.alertsTest, () => showNotification('StreamChat Hub', 'Go-live alerts will look like this.'))
+  handle(IPC.liveAlerts, (_e, value: boolean) => {
     liveAlertsWanted = value === true
     syncLiveWatch()
   })
 
-  ipcMain.handle(IPC.onTop, (_e, value: boolean) => win.setAlwaysOnTop(value, 'floating'))
+  handle(IPC.onTop, (_e, value: boolean) => win.setAlwaysOnTop(value === true, 'floating'))
 
   // Keep the native window frame in step with the chosen theme (otherwise the minimise/close strip
   // would stay dark on a light theme). The values come from the UI, so only plain #rrggbb is accepted.
-  ipcMain.handle(IPC.windowTheme, (_e, theme: WindowTheme) => {
+  handle(IPC.windowTheme, (_e, theme: WindowTheme) => {
     const hex = /^#[0-9a-fA-F]{6}$/
     if (!hex.test(theme?.background ?? '') || !hex.test(theme?.foreground ?? '')) return
     win.setBackgroundColor(theme.background)
@@ -216,6 +247,7 @@ function createWindow(): void {
       IPC.channels,
       IPC.send,
       IPC.moderate,
+      IPC.emotesList,
       IPC.authGet,
       IPC.authLogin,
       IPC.authCancel,
@@ -247,6 +279,11 @@ function createWindow(): void {
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? APP_ID : `${APP_ID}.dev`)
 
 app.whenReady().then(() => {
+  // The UI needs exactly one browser permission: desktop notifications (mention alerts). Everything else (camera,
+  // microphone, location, ...) is refused, as Electron's security checklist item 5 advises.
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => callback(permission === 'notifications' && isAppUrl(wc.getURL(), devUrl)))
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => permission === 'notifications' && !!wc && isAppUrl(wc.getURL(), devUrl))
   createWindow()
   // macOS: clicking the dock icon with no windows open should re-open one.
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())

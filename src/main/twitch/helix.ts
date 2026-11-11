@@ -13,6 +13,8 @@
  *       parameters and required permission ("scope"). If it needs a new scope, add it in auth.ts.
  */
 import type { ActionResult } from '../../shared/types'
+import type { HelixEmote } from '../emotes/picker'
+import { parseHelixEmotes } from '../emotes/picker'
 import type { TwitchAuth } from './auth'
 
 /** One badge family from /chat/badges, e.g. all "subscriber" badge versions. */
@@ -109,6 +111,45 @@ export class Helix {
     if (!res) return undefined
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`)
     return ((await res.json()) as { data?: BadgeSet[] }).data ?? []
+  }
+
+  // -------------------------------------------------------------------------------- emotes
+
+  /** Twitch's global emotes (Kappa and friends). */
+  async getGlobalEmotes(): Promise<HelixEmote[] | undefined> {
+    return this.emoteLookup('/chat/emotes/global')
+  }
+
+  /** A channel's own emotes (all tiers; includes ones you may not have unlocked). */
+  async getChannelEmotes(broadcasterId: string): Promise<HelixEmote[] | undefined> {
+    return this.emoteLookup(`/chat/emotes?broadcaster_id=${encodeURIComponent(broadcasterId)}`)
+  }
+
+  /**
+   * The emotes `userId` can use in this channel (their subs, follower emotes here, bits, global...). Needs scope
+   * `user:read:emotes`. Paged; we read at most 40 pages (4,000 emotes).
+   */
+  async getUserEmotes(userId: string, broadcasterId: string): Promise<HelixEmote[] | undefined> {
+    const out: HelixEmote[] = []
+    let cursor = ''
+    for (let page = 0; page < 40; page++) {
+      const res = await this.request(`/chat/emotes/user?user_id=${encodeURIComponent(userId)}&broadcaster_id=${encodeURIComponent(broadcasterId)}${cursor}`)
+      if (!res) return undefined
+      if (!res.ok) throw new HelixError(res.status, await this.describeFailure(res))
+      const body: any = await res.json().catch(() => ({})) // eslint-disable-line @typescript-eslint/no-explicit-any
+      out.push(...parseHelixEmotes(body))
+      const next = body?.pagination?.cursor
+      if (typeof next !== 'string' || !next) break
+      cursor = `&after=${encodeURIComponent(next)}`
+    }
+    return out
+  }
+
+  private async emoteLookup(path: string): Promise<HelixEmote[] | undefined> {
+    const res = await this.request(path)
+    if (!res) return undefined
+    if (!res.ok) throw new HelixError(res.status, await this.describeFailure(res))
+    return parseHelixEmotes(await res.json().catch(() => ({})))
   }
 
   // ---------------------------------------------------------------------------------- chat

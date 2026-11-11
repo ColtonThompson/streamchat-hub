@@ -105,10 +105,18 @@ describe('signing in', () => {
   })
 
   it('reports an expired code', async () => {
-    handlers.device = () => json({ device_code: 'd', user_code: 'U', verification_uri: 'https://x', expires_in: 0, interval: 0 })
+    handlers.device = () => json({ device_code: 'd', user_code: 'U', verification_uri: 'https://www.twitch.tv/activate', expires_in: 0, interval: 0 })
     const { auth } = make()
     await auth.login()
     expect(auth.getState()).toMatchObject({ status: 'signed-out', error: 'The code expired. Try again.' })
+  })
+
+  it('refuses to open a sign-in address that is not on twitch.tv', async () => {
+    handlers.device = () => json({ device_code: 'd', user_code: 'U', verification_uri: 'https://evil.example/activate', expires_in: 60, interval: 0 })
+    const { auth } = make()
+    await auth.login()
+    expect(auth.getState()).toMatchObject({ status: 'signed-out' })
+    expect(auth.getState().error).toContain('unexpected sign-in address')
   })
 
   it('reports a refusal (the user clicked "deny")', async () => {
@@ -149,7 +157,7 @@ describe('signing in', () => {
 
   it('lets a newer sign-in take over from an older one that is still waiting', async () => {
     let devices = 0
-    handlers.device = () => json({ device_code: `dev${++devices}`, user_code: 'U', verification_uri: 'https://x', expires_in: 60, interval: 0 })
+    handlers.device = () => json({ device_code: `dev${++devices}`, user_code: 'U', verification_uri: 'https://www.twitch.tv/activate', expires_in: 60, interval: 0 })
     handlers.token = (form) => (form.device_code === 'dev2' ? json({ access_token: 'tok2', refresh_token: 'r', expires_in: 3600 }) : pending())
     const { auth, states } = make()
     const first = auth.login()
@@ -216,6 +224,15 @@ describe('token refresh', () => {
     expect(await auth.refresh()).toBe(false)
     expect(auth.getState()).toMatchObject({ status: 'signed-out', error: 'Your Twitch session ended. Sign in again.' })
     expect(await auth.getAccessToken()).toBeUndefined()
+  })
+
+  it('stays signed in through a Twitch outage (5xx) or rate limit (429)', async () => {
+    const { auth } = await signedIn()
+    for (const status of [503, 429]) {
+      handlers.token = () => json({ message: 'try later' }, status)
+      expect(await auth.refresh()).toBe(false)
+      expect(auth.getState().status).toBe('signed-in')
+    }
   })
 
   it('stays signed in through a network problem and tries again later', async () => {

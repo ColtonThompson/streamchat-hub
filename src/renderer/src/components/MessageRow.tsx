@@ -10,6 +10,9 @@
  *   a muted placeholder instead of the text. Click the row (or press Enter) to peek at the original,
  *   shown struck-through.
  *
+ * MODERATORS: with moderation tools on, clicking a chat line (or a "was banned" note) opens UserPanel.tsx for that
+ *   person: their messages this session, Ban / Timeout / Unban with hotkeys. See lib/modpanel.ts for who qualifies.
+ *
  * TIMESTAMP + NAME COLOUR: when the user turns timestamps on (Settings -> Chat), a muted time is shown
  *   first on every row. Usernames are passed through `readableOn` so a viewer's chosen colour never
  *   disappears into the current theme's background.
@@ -35,7 +38,9 @@ import { splitMentions } from '../lib/mentions'
 import { PLATFORM_META } from '../lib/platforms'
 import { formatTime, type TimeStyle } from '../lib/time'
 import { MentionChip } from './MentionChip'
-import { ModToolbar } from './ModToolbar'
+import { modTargetFor } from '../lib/modpanel'
+import { useChatStore } from '../store/chatStore'
+import { useModStore } from '../store/modStore'
 
 /** An emote image that falls back to the emote's name as text if the image fails to load. */
 function EmoteImg({ src, name, title, overlay }: { src: string; name: string; title: string; overlay?: boolean }) {
@@ -152,7 +157,16 @@ export const MessageRow = memo(function MessageRow({ msg, alt, showChannel, time
     </span>
   )
 
-  // Only removed rows are clickable. `role="button"` + tabIndex make them usable with the keyboard too.
+  // Moderators: clicking a normal chat line (or a "was banned" note) opens that person's panel (UserPanel.tsx).
+  const canModerate = useChatStore((s) => s.auth.canModerate)
+  const myId = useChatStore((s) => s.auth.userId)
+  const modTarget = modTargetFor(msg, { canModerate, userId: myId })
+  const openPanel = () => {
+    if (modTarget && !window.getSelection()?.toString()) useModStore.getState().open(modTarget) // not while selecting text
+  }
+
+  // Clickable rows: removed ones (peek at the original) and, for moderators, the rows above. `role="button"` + tabIndex
+  // make them usable with the keyboard too.
   const interactive = msg.removed
     ? {
         role: 'button' as const,
@@ -166,7 +180,24 @@ export const MessageRow = memo(function MessageRow({ msg, alt, showChannel, time
           }
         }
       }
-    : {}
+    : modTarget
+      ? {
+          role: 'button' as const,
+          tabIndex: 0,
+          'aria-haspopup': 'dialog' as const,
+          'data-mod': true,
+          title: `${modTarget.name}: messages and moderation options`,
+          onClick: (e: { target: EventTarget }) => {
+            if (!(e.target as HTMLElement).closest('a')) openPanel() // links keep their own click
+          },
+          onKeyDown: (e: KeyboardEvent & { target: EventTarget; currentTarget: EventTarget }) => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+              e.preventDefault()
+              openPanel()
+            }
+          }
+        }
+      : {}
 
   // Choose the body for this kind of row.
   let body
@@ -230,7 +261,6 @@ export const MessageRow = memo(function MessageRow({ msg, alt, showChannel, time
         {platform.glyph}
       </span>
       <div className="msg-body">{body}</div>
-      <ModToolbar msg={msg} />
     </div>
   )
 })

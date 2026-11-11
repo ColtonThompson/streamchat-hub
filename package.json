@@ -1,7 +1,7 @@
 {
   "name": "streamchat-hub",
-  "version": "0.4.0",
-  "description": "One merged chat for every platform you stream to or watch!",
+  "version": "0.5.0",
+  "description": "One merged chat for every platform you stream to",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@fontsource-variable/figtree": "^5.1.0",
-    "electron-updater": "^6.3.9",
+    "electron-updater": "^6.8.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-virtuoso": "^4.12.0",
@@ -28,18 +28,17 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/ws": "^8.5.12",
-    "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^33.0.0",
-    "electron-builder": "25.1.8",
-    "electron-builder-squirrel-windows": "25.1.8",
-    "electron-vite": "^2.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
     "typescript": "^5.5.0",
-    "vite": "^5.4.0",
-    "vitest": "^2.1.8"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ColtonThompson/streamchat-hub"
+    "url": "https://github.com/ColtonThompson/streamchat-hub.git"
   },
   "author": "Nightleaf"
 }

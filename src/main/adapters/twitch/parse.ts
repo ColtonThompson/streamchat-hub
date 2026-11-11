@@ -18,6 +18,7 @@
  * TIP: to see what Twitch actually sends for a message, log `line` in adapters/twitch/index.ts `handle()`.
  */
 import type { Badge, ChatMessage, EventType, MessagePart, ModerationEvent } from '../../../shared/types'
+import { formatDuration } from '../../../shared/duration'
 import type { IrcMessage } from './irc'
 
 /** Twitch's own emotes are images at a predictable URL built from the emote id. "2.0" = 2x size. */
@@ -76,7 +77,7 @@ function buildParts(text: string, emotesTag: string): MessagePart[] {
   if (emotesTag) {
     for (const group of emotesTag.split('/')) {
       const [id, positions] = group.split(':')
-      if (!id || !positions) continue
+      if (!id || !positions || !/^[A-Za-z0-9_]{1,64}$/.test(id)) continue // the id goes into an image URL: plain characters only
       for (const r of positions.split(',')) {
         const [start, end] = r.split('-').map(Number)
         if (Number.isInteger(start) && Number.isInteger(end)) ranges.push({ id, start, end })
@@ -233,22 +234,6 @@ export function clearmsgToAction(irc: IrcMessage): ModerationEvent | null {
   const messageId = irc.tags['target-msg-id']
   if (!channel || !messageId) return null
   return { type: 'delete-message', platform: 'twitch', channelId: channel, messageId }
-}
-
-/** 5400 -> "1h 30m". Shows at most the two largest units. */
-function formatDuration(seconds: number): string {
-  const units: [number, string][] = [[604800, 'w'], [86400, 'd'], [3600, 'h'], [60, 'm'], [1, 's']]
-  const out: string[] = []
-  let rest = seconds
-  for (const [size, label] of units) {
-    const n = Math.floor(rest / size)
-    if (n > 0) {
-      out.push(`${n}${label}`)
-      rest -= n * size
-    }
-    if (out.length === 2) break
-  }
-  return out.join(' ') || '0s'
 }
 
 /**

@@ -6,15 +6,14 @@
  *   - not set up       a note: add your Twitch client ID to .env
  *   - signed out       [Sign in to Twitch]
  *   - waiting          the code to type on twitch.tv/activate, and [Cancel]
- *   - signed in        "Signed in as X", [Sign out], and for each optional extra either "... on" or an
- *                      [Enable ...] button that re-authorizes with the extra permissions:
- *                        moderation tools (delete / time out / ban)
- *                        polls & predictions (live cards for YOUR channel's polls and predictions)
- *                        go-live alerts (desktop notification when a channel you follow goes live)
+ *   - signed in        "Signed in as X", [Sign out], and a checklist of the optional permissions (lib/permissions.ts):
+ *                      each shows whether it is on, what it enables, and an [Allow] button when it is off
+ *                      (re-authorizes with the extra permission); [Allow all] asks for every missing one at once.
  *
  * All the real work happens in the main process (main/twitch/auth.ts). This component only reads
  * `auth` from the store and calls `window.api.auth.*`.
  */
+import { loginOptionsFor, missingPermissions, permissionStatus } from '../../lib/permissions'
 import { useChatStore } from '../../store/chatStore'
 import { useSettingsStore } from '../../store/settingsStore'
 
@@ -22,6 +21,7 @@ export function TwitchAccount() {
   const auth = useChatStore((s) => s.auth)
   const liveAlerts = useSettingsStore((s) => s.liveAlerts)
   const setLiveAlerts = useSettingsStore((s) => s.setLiveAlerts)
+  const missing = missingPermissions(auth)
 
   if (!auth.configured) {
     return (
@@ -40,26 +40,27 @@ export function TwitchAccount() {
         <button className="tool" onClick={() => void window.api.auth.logout()}>
           Sign out
         </button>
-        {auth.canModerate ? (
-          <span className="account-ok">Moderation tools on</span>
-        ) : (
-          <button
-            className="tool"
-            title="Asks Twitch for permission to delete messages, time out and ban. Only useful in channels where you are a moderator."
-            onClick={() => void window.api.auth.login({ moderation: true })}
-          >
-            Enable moderation tools
-          </button>
-        )}
-        {auth.canReadPolls ? (
-          <span className="account-ok">Polls &amp; predictions on</span>
-        ) : (
-          <button
-            className="tool"
-            title="Asks Twitch for permission to read your channel's polls and predictions, so they appear above the chat while you run them. Works for your own channel only."
-            onClick={() => void window.api.auth.login({ polls: true })}
-          >
-            Enable polls &amp; predictions
+        <div className="perm-list" role="list" aria-label="Twitch permissions">
+          {permissionStatus(auth).map(({ info, granted }) => (
+            <div className="perm" role="listitem" key={info.id} data-granted={granted}>
+              <span className="perm-mark" aria-label={granted ? 'On' : 'Off'}>
+                {granted ? '✓' : '✗'}
+              </span>
+              <span className="perm-text">
+                <strong>{info.label}</strong>
+                <span className="perm-enables">{info.enables}</span>
+              </span>
+              {!granted && (
+                <button className="tool" onClick={() => void window.api.auth.login(loginOptionsFor([info.id]))}>
+                  Allow
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {missing.length > 1 && (
+          <button className="tool" onClick={() => void window.api.auth.login(loginOptionsFor(missing.map((m) => m.id)))}>
+            Allow all ({missing.length} missing)
           </button>
         )}
         {(auth.canReadPolls || auth.canReadRedemptions) && (
@@ -68,16 +69,6 @@ export function TwitchAccount() {
             box and switch Twitch on.
           </p>
         )}
-        {!auth.canReadRedemptions && (
-          <button
-            className="tool"
-            title="Asks Twitch for permission to read Channel Points redemptions in your own channel, so each reward a viewer redeems appears in the chat as an event."
-            onClick={() => void window.api.auth.login({ redemptions: true })}
-          >
-            Enable reward redemptions
-          </button>
-        )}
-        {auth.canReadRedemptions && <span className="account-ok">Reward redemptions on</span>}
         {auth.canReadFollows ? (
           <>
             <label className="check">
@@ -92,15 +83,7 @@ export function TwitchAccount() {
               Send test notification
             </button>
           </>
-        ) : (
-          <button
-            className="tool"
-            title="Asks Twitch for permission to see which channels you follow are live, so a desktop notification can tell you who just went live and what they're playing."
-            onClick={() => void window.api.auth.login({ follows: true })}
-          >
-            Enable go-live alerts
-          </button>
-        )}
+        ) : null}
         {auth.error && <span className="account-error">{auth.error}</span>}
       </div>
     )

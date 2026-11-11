@@ -19,6 +19,8 @@
  */
 import { useEffect, useRef } from 'react'
 import { useSettingsStore, type SettingsTab } from '../../store/settingsStore'
+import { updatePending } from '../../lib/updates'
+import { useUpdateStore } from '../../store/updateStore'
 import { AboutTab } from './AboutTab'
 import { AccountsTab } from './AccountsTab'
 import { AppearanceTab } from './AppearanceTab'
@@ -35,6 +37,7 @@ export function SettingsPanel() {
   const open = useSettingsStore((s) => s.panelOpen)
   const tab = useSettingsStore((s) => s.tab)
   const setTab = useSettingsStore((s) => s.setTab)
+  const update = useUpdateStore((s) => updatePending(s.state))
   const close = useSettingsStore((s) => s.closePanel)
   const closeButton = useRef<HTMLButtonElement>(null)
 
@@ -93,6 +96,7 @@ export function SettingsPanel() {
             onClick={() => setTab(t.id)}
           >
             {t.label}
+            {t.id === 'about' && update && <span className="update-dot" role="img" aria-label="Update available" />}
           </button>
         ))}
       </div>

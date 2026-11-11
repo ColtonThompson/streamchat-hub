@@ -18,16 +18,19 @@
  * `subscribe` call at the bottom persists any change to the saved fields.
  */
 import { create } from 'zustand'
+import type { Platform } from '../../../shared/types'
 import {
   DEFAULT_SETTINGS,
   MAX_BLACKLIST_TERMS,
   MAX_TERM_LENGTH,
   normalizeTerm,
   pickSettings,
+  sanitizePingNames,
   sanitizeSettings,
   type Settings,
   type TimestampMode
 } from '../lib/settings'
+import { clampTimeout } from '../../../shared/duration'
 import { applyZoomAction, clampZoom, type ZoomAction } from '../../../shared/zoom'
 import { resolveTheme, type ThemeChoice, type ThemeId } from '../lib/themes'
 
@@ -53,6 +56,9 @@ interface SettingsState extends Settings {
   resolvedTheme: ThemeId
   panelOpen: boolean
   tab: SettingsTab
+  /** Which platform's page is showing under Settings -> Accounts (not saved). */
+  accountsPlatform: Platform
+  setAccountsPlatform: (p: Platform) => void
 
   setTheme: (theme: ThemeChoice) => void
   setResolvedTheme: (id: ThemeId) => void
@@ -60,6 +66,12 @@ interface SettingsState extends Settings {
   setTimestampSeconds: (on: boolean) => void
   setLiveAlerts: (on: boolean) => void
   setShowStreamInfo: (on: boolean) => void
+  /** How long the T key times someone out (seconds; clamped to Twitch's limits). */
+  setTimeoutSeconds: (seconds: number) => void
+  setPingAlerts: (on: boolean) => void
+  setPingSound: (on: boolean) => void
+  /** Replace the extra names that count as you (cleaned and de-duplicated). */
+  setPingNames: (names: string[]) => void
   /** Set the chat text size (percent); out-of-range values are clamped. */
   setChatZoom: (percent: number) => void
   /** Step the chat text size bigger/smaller, or back to 100%. */
@@ -83,6 +95,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   resolvedTheme: resolveTheme(initial.theme, systemPrefersDark),
   panelOpen: false,
   tab: 'appearance',
+  accountsPlatform: 'twitch',
+  setAccountsPlatform: (accountsPlatform) => set({ accountsPlatform }),
 
   setTheme: (theme) => set({ theme }),
   setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
@@ -90,6 +104,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setTimestampSeconds: (timestampSeconds) => set({ timestampSeconds }),
   setLiveAlerts: (liveAlerts) => set({ liveAlerts }),
   setShowStreamInfo: (showStreamInfo) => set({ showStreamInfo }),
+  setTimeoutSeconds: (seconds) => set({ timeoutSeconds: clampTimeout(seconds) }),
+  setPingAlerts: (pingAlerts) => set({ pingAlerts }),
+  setPingSound: (pingSound) => set({ pingSound }),
+  setPingNames: (names) => set({ pingNames: sanitizePingNames(names) }),
   setChatZoom: (percent) => set({ chatZoom: clampZoom(percent) }),
   zoom: (action) => set((s) => ({ chatZoom: applyZoomAction(s.chatZoom, action) })),
 
@@ -115,7 +133,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 useSettingsStore.subscribe((state, prev) => {
   const a = pickSettings(state)
   const b = pickSettings(prev)
-  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts && a.chatZoom === b.chatZoom && a.showStreamInfo === b.showStreamInfo) return
+  if (a.theme === b.theme && a.timestamps === b.timestamps && a.timestampSeconds === b.timestampSeconds && a.blacklist === b.blacklist && a.liveAlerts === b.liveAlerts && a.chatZoom === b.chatZoom && a.showStreamInfo === b.showStreamInfo && a.timeoutSeconds === b.timeoutSeconds && a.pingAlerts === b.pingAlerts && a.pingSound === b.pingSound && a.pingNames === b.pingNames) return
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(a))
   } catch {

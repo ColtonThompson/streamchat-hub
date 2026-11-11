@@ -21,7 +21,7 @@
  *   1. Theme variables         5. Message rows (base, shading, hover)
  *   2. Page and layout         6. Rich content (emotes, badges, links)
  *   3. Top bar and controls    7. Special rows (events, mod notes, removed, bits)
- *   4. Account + channel box   8. Mod toolbar, toast, composer
+ *   4. Account + channel box   8. Mod user panel, toast, composer
  *   9. Settings panel         10. Timestamps
  */
 
@@ -277,27 +277,58 @@ body {
 .channel-row .channels { flex: 1 1 220px; }
 
 /* ============================================================================================
-   8. MOD TOOLBAR, TOAST, COMPOSER
+   8. MOD USER PANEL, TOAST, COMPOSER
    ============================================================================================ */
 
-/* Hover toolbar (components/ModToolbar.tsx). Hidden until its row is hovered or keyboard-focused. */
-.mod-toolbar {
-  position: absolute; top: 2px; right: 8px; z-index: 2;
-  display: none; align-items: center; gap: 2px; padding: 3px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-  box-shadow: 0 4px 14px var(--shadow);
+/* Moderator user panel (components/UserPanel.tsx). Rows are clickable when moderation tools are on. */
+.msg[data-mod='true'] { cursor: pointer; }
+.mp-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgba(0,0,0,.5);
 }
-.msg:hover .mod-toolbar, .msg:focus-within .mod-toolbar { display: flex; }
-.mod-btn {
-  font: inherit; font-size: 11.5px; font-weight: 700; color: var(--muted);
-  background: transparent; border: 0; border-radius: 5px; padding: 3px 8px; cursor: pointer;
+.mp {
+  width: min(560px, 100%); max-height: min(560px, 100%); display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px var(--shadow);
+  outline: none; overflow: hidden;
 }
-.mod-btn:hover { color: var(--text); background: var(--line); }
-.mod-btn:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
-.mod-btn:disabled { opacity: .5; cursor: default; }
-.mod-btn[data-danger='true']:hover { background: var(--danger-soft); color: var(--danger-text); }
-.mod-btn[data-armed='true'] { background: #c0364b; color: #fff; } /* the "Confirm ban" state */
-.mod-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--line); }
+.mp-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.mp-title { margin: 0; font-size: 16px; }
+.mp-where, .mp-count { font-size: 12px; color: var(--muted); }
+.mp-count { margin-left: auto; }
+.mp-status { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; background: var(--danger-soft); color: var(--danger-text); }
+.mp-list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; flex: 1; min-height: 80px; }
+.mp-msg { display: flex; align-items: baseline; gap: 8px; padding: 4px 14px; font-size: 13.5px; }
+.mp-msg:nth-child(even) { background: color-mix(in srgb, var(--text) 7%, transparent); } /* alternating rows */
+.mp-msg:hover { background: var(--line); }
+.mp-msg[data-removed] .mp-text { text-decoration: line-through; opacity: .6; }
+.mp-time { font-size: 11px; color: var(--muted); flex: none; }
+.mp-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mp-state { font-size: 11px; color: var(--muted); flex: none; }
+.mp-empty { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+.mp-del {
+  font: inherit; font-size: 11px; color: var(--muted); background: transparent; border: 1px solid var(--line);
+  border-radius: 5px; padding: 1px 7px; cursor: pointer; flex: none;
+}
+.mp-del:hover:not(:disabled) { color: var(--danger-text); background: var(--danger-soft); }
+.mp-hint { margin: 0; padding: 6px 14px; font-size: 12.5px; color: var(--danger-text); }
+.mp-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.mp-btn {
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--text); background: var(--line);
+  border: 1px solid transparent; border-radius: 7px; padding: 6px 12px; cursor: pointer;
+}
+.mp-btn:hover:not(:disabled) { border-color: var(--muted); }
+.mp-btn:focus-visible, .mp-del:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.mp-btn:disabled, .mp-del:disabled { opacity: .5; cursor: default; }
+.mp-btn[data-danger='true']:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger-text); }
+.mp-btn[data-armed='true'] { background: #c0364b; color: #fff; }
+.mp-close { margin-left: auto; }
+.mp-btn kbd, .setting-help kbd {
+  font: inherit; font-size: 11px; padding: 0 5px; margin-left: 4px; border: 1px solid var(--muted); border-radius: 4px; opacity: .85;
+}
+.timeout-setting { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.timeout-amount { width: 90px; flex: none; }
+.timeout-unit { width: auto; flex: none; cursor: pointer; }
+.timeout-now { font-size: 12.5px; color: var(--muted); }
 
 /* Toast (components/Toast.tsx): a short notice above the message box. */
 .toast {
@@ -322,6 +353,35 @@ body {
   border: 0; border-radius: 8px; padding: 0 16px; cursor: pointer;
 }
 .composer-send:disabled { opacity: .4; cursor: default; }
+.composer { position: relative; }
+.composer-emote {
+  flex: none; display: grid; place-items: center; width: 36px; color: var(--muted); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.composer-emote:hover:not(:disabled) { color: var(--text); }
+.composer-emote[aria-expanded='true'] { color: var(--text); border-color: var(--accent-default); }
+.composer-emote:disabled { opacity: .4; cursor: default; }
+.composer-emote:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+
+/* Emote picker (components/EmotePicker.tsx): a popup that opens upward from the message box. */
+.ep {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% - 4px); z-index: 30; max-width: 460px; height: min(380px, 60vh);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px var(--shadow);
+}
+.ep-search { flex: none; }
+.ep-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.ep-title { margin: 0 0 4px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.ep-count { font-weight: 500; opacity: .7; margin-left: 4px; }
+.ep-note, .ep-hint { margin: 0 0 6px; font-size: 11.5px; color: var(--muted); }
+.ep-hint { flex: none; margin: 0; padding-top: 6px; border-top: 1px solid var(--line); }
+.ep-empty { margin: 8px 2px; font-size: 13px; color: var(--muted); }
+.ep-grid { display: flex; flex-wrap: wrap; gap: 2px; }
+.ep-emote { width: 36px; height: 36px; padding: 3px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.ep-emote:hover, .ep-emote:focus-visible { background: var(--line); outline: none; }
+.ep-emote img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ep-more { margin-top: 6px; }
+.ep-link { font: inherit; color: var(--accent-default); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 
 /* ============================================================================================
    9. SETTINGS PANEL   (components/settings/*)
@@ -420,6 +480,15 @@ body {
 }
 .account-card-title { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
 .account-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+/* Platform sub-tabs under Settings -> Accounts. */
+.subtabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.subtab {
+  display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer;
+}
+.subtab:hover { color: var(--text); }
+.subtab[aria-selected='true'] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+.subtab:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 2px; }
 
 /* ============================================================================================
    10. TIMESTAMPS   (the optional time at the start of each row; shown via Settings -> Chat)
@@ -482,10 +551,18 @@ body {
 /* ---- 12. UPDATE BANNER (shown only when a downloaded update is waiting) ---- */
 .update-banner {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 6px 12px;
-  font-size: 12.5px; color: var(--text);
+  font-size: 13px; color: var(--text);
   background: color-mix(in srgb, var(--accent-default) 16%, var(--panel));
   border-bottom: 1px solid color-mix(in srgb, var(--accent-default) 45%, transparent);
 }
+/* An update that is ready is the one that needs action: make it a solid accent bar. */
+.update-banner[data-status='ready'] { padding: 9px 12px; font-weight: 600; color: var(--on-accent); background: var(--accent-default); border-bottom: 0; }
+.update-banner[data-status='ready'] .tool { color: var(--on-accent); background: transparent; border-color: color-mix(in srgb, var(--on-accent) 60%, transparent); }
+.update-banner[data-status='ready'] .tool:hover { background: color-mix(in srgb, var(--on-accent) 18%, transparent); }
+.update-banner[data-status='ready'] .update-go { background: var(--on-accent); color: var(--accent-default); font-weight: 700; }
+.update-banner[data-status='ready'] .update-go:hover { background: var(--on-accent); opacity: .9; }
+/* The dot beside "Settings" and the About tab while an update is waiting. */
+.update-dot { display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--accent-default); box-shadow: 0 0 0 2px var(--panel); vertical-align: middle; }
 .update-banner span { flex: 1 1 auto; }
 .tool:disabled { opacity: .5; cursor: default; }
 
@@ -523,3 +600,13 @@ body {
 .streaminfo-title { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .streaminfo-game { flex: none; max-width: 30%; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .streaminfo-viewers { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---- permissions checklist (Settings -> Accounts) ---- */
+.perm-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.perm { display: flex; align-items: flex-start; gap: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.perm-mark { flex: none; width: 1.2em; font-weight: 800; color: var(--muted); }
+.perm[data-granted='true'] .perm-mark { color: var(--ok); }
+.perm[data-granted='false'] .perm-mark { color: var(--danger-text); }
+.perm-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.perm-text strong { color: var(--text); font-size: 13px; }
+.perm-enables { font-size: 12px; color: var(--muted); }

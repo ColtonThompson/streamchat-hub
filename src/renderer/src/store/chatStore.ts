@@ -254,9 +254,14 @@ export function subscribeToMain(): () => void {
   const offAuth = window.api.auth.onState((a) => useChatStore.getState().setAuth(a))
   // The sign-in state may already be known by the time the UI loads, so ask for it once.
   void window.api.auth.get().then((a) => useChatStore.getState().setAuth(a))
+  // Coming back from the browser after approving a sign-in: ask again, so the page shows the new permissions even if a
+  // push was missed.
+  const refreshAuth = () => void window.api.auth.get().then((a) => useChatStore.getState().setAuth(a))
+  window.addEventListener('focus', refreshAuth)
   return () => {
     offBatch()
     offStatus()
     offAuth()
+    window.removeEventListener('focus', refreshAuth)
   }
 }

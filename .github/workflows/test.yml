@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read # the tests never need to write to the repo
 jobs:
   test:
     runs-on: ubuntu-latest

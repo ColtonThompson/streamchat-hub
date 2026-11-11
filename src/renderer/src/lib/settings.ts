@@ -14,6 +14,8 @@
  * TO ADD A SETTING: add the field to `Settings` and `DEFAULT_SETTINGS`, validate it in
  *   `sanitizeSettings`, add an action in settingsStore.ts, and put a control in a Settings tab.
  */
+import { cleanPingName, MAX_PING_NAMES } from './pings'
+import { clampTimeout, TIMEOUT_DEFAULT } from '../../../shared/duration'
 import { clampZoom, ZOOM_DEFAULT } from '../../../shared/zoom'
 import { THEMES, type ThemeChoice } from './themes'
 
@@ -32,6 +34,14 @@ export interface Settings {
   chatZoom: number
   /** Show the stream's title and viewer count above the chat when reading a single stream. */
   showStreamInfo: boolean
+  /** How long the T key times someone out, in seconds (1 to 1,209,600). */
+  timeoutSeconds: number
+  /** Desktop notification (when the window isn't focused) when someone @mentions you. */
+  pingAlerts: boolean
+  /** Play a short sound when someone @mentions you. */
+  pingSound: boolean
+  /** Extra names that count as you (e.g. your YouTube @handle), lower-case, without the @. Your Twitch login always counts. */
+  pingNames: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -41,7 +51,11 @@ export const DEFAULT_SETTINGS: Settings = {
   blacklist: [],
   liveAlerts: true,
   chatZoom: ZOOM_DEFAULT,
-  showStreamInfo: true
+  showStreamInfo: true,
+  timeoutSeconds: TIMEOUT_DEFAULT,
+  pingAlerts: true,
+  pingSound: true,
+  pingNames: []
 }
 
 export const MAX_BLACKLIST_TERMS = 200
@@ -83,10 +97,26 @@ export function sanitizeSettings(raw: unknown): Settings {
   const liveAlerts = typeof r.liveAlerts === 'boolean' ? r.liveAlerts : DEFAULT_SETTINGS.liveAlerts
   const chatZoom = typeof r.chatZoom === 'number' ? clampZoom(r.chatZoom) : DEFAULT_SETTINGS.chatZoom
   const showStreamInfo = typeof r.showStreamInfo === 'boolean' ? r.showStreamInfo : DEFAULT_SETTINGS.showStreamInfo
-  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts, chatZoom, showStreamInfo }
+  const timeoutSeconds = typeof r.timeoutSeconds === 'number' ? clampTimeout(r.timeoutSeconds) : DEFAULT_SETTINGS.timeoutSeconds
+  const pingAlerts = typeof r.pingAlerts === 'boolean' ? r.pingAlerts : DEFAULT_SETTINGS.pingAlerts
+  const pingSound = typeof r.pingSound === 'boolean' ? r.pingSound : DEFAULT_SETTINGS.pingSound
+  const pingNames = sanitizePingNames(r.pingNames)
+  return { theme, timestamps, timestampSeconds, blacklist, liveAlerts, chatZoom, showStreamInfo, timeoutSeconds, pingAlerts, pingSound, pingNames }
+}
+
+/** Keep only usable, distinct names (see lib/pings.ts), at most MAX_PING_NAMES. */
+export function sanitizePingNames(raw: unknown): string[] {
+  const out: string[] = []
+  if (!Array.isArray(raw)) return out
+  for (const item of raw) {
+    const name = typeof item === 'string' ? cleanPingName(item) : undefined
+    if (name && !out.includes(name)) out.push(name)
+    if (out.length >= MAX_PING_NAMES) break
+  }
+  return out
 }
 
 /** The fields that get saved (everything in `Settings`, nothing else from the store). */
 export function pickSettings(s: Settings): Settings {
-  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts, chatZoom: s.chatZoom, showStreamInfo: s.showStreamInfo }
+  return { theme: s.theme, timestamps: s.timestamps, timestampSeconds: s.timestampSeconds, blacklist: s.blacklist, liveAlerts: s.liveAlerts, chatZoom: s.chatZoom, showStreamInfo: s.showStreamInfo, timeoutSeconds: s.timeoutSeconds, pingAlerts: s.pingAlerts, pingSound: s.pingSound, pingNames: s.pingNames }
 }

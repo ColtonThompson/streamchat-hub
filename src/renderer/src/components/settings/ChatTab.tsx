@@ -15,6 +15,7 @@
  * wipe a long list.
  */
 import { useEffect, useMemo, useState } from 'react'
+import { DURATION_UNITS, formatDuration, splitDuration, toSeconds, type DurationUnit } from '../../../../shared/duration'
 import { compileBlacklist } from '../../lib/blacklist'
 import { MAX_BLACKLIST_TERMS, MAX_TERM_LENGTH, type TimestampMode } from '../../lib/settings'
 import { formatTime, timeStyleOf } from '../../lib/time'
@@ -42,6 +43,38 @@ export function ChatTab() {
   const setMode = useSettingsStore((s) => s.setTimestamps)
   const setSeconds = useSettingsStore((s) => s.setTimestampSeconds)
   const style = timeStyleOf(mode, seconds)
+
+  // ---- moderation ----
+  const timeoutSeconds = useSettingsStore((s) => s.timeoutSeconds)
+  const setTimeoutSeconds = useSettingsStore((s) => s.setTimeoutSeconds)
+  const split = splitDuration(timeoutSeconds)
+  const [amountText, setAmountText] = useState(String(split.amount))
+  const [unit, setUnit] = useState<DurationUnit>(split.unit)
+  // Keep the boxes in step if the saved length changes from elsewhere (e.g. loaded at startup).
+  useEffect(() => {
+    const s = splitDuration(timeoutSeconds)
+    setAmountText((t) => (toSeconds(Number(t), unit) === timeoutSeconds ? t : String(s.amount)))
+    setUnit((u) => (toSeconds(Number(amountText), u) === timeoutSeconds ? u : s.unit))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeoutSeconds])
+  const commitTimeout = (text: string, u: DurationUnit) => {
+    const n = Number(text)
+    if (text.trim() !== '' && Number.isFinite(n) && n > 0) setTimeoutSeconds(toSeconds(n, u))
+  }
+
+  // ---- mention alerts ----
+  const pingAlerts = useSettingsStore((s) => s.pingAlerts)
+  const pingSound = useSettingsStore((s) => s.pingSound)
+  const pingNames = useSettingsStore((s) => s.pingNames)
+  const setPingAlerts = useSettingsStore((s) => s.setPingAlerts)
+  const setPingSound = useSettingsStore((s) => s.setPingSound)
+  const setPingNames = useSettingsStore((s) => s.setPingNames)
+  const myLogin = useChatStore((s) => s.auth.login)
+  const [namesText, setNamesText] = useState(pingNames.join(', '))
+  const commitNames = () => {
+    setPingNames(namesText.split(/[\s,]+/).filter(Boolean))
+    setNamesText(useSettingsStore.getState().pingNames.join(', ')) // show what was kept
+  }
 
   // ---- stream info ----
   const showInfo = useSettingsStore((s) => s.showStreamInfo)
@@ -80,6 +113,74 @@ export function ChatTab() {
 
   return (
     <>
+      <section className="setting">
+        <h3 className="setting-title">Moderation</h3>
+        <p className="setting-help">
+          With moderation tools on (Settings → Accounts), click a message to see that person&rsquo;s messages from this session. Press{' '}
+          <kbd>T</kbd> to time them out for the length below, <kbd>B</kbd> to ban (press it twice to confirm), <kbd>U</kbd> to unban.
+        </p>
+        <div className="timeout-setting">
+          <label htmlFor="timeout-amount">Timeout length</label>
+          <input
+            id="timeout-amount"
+            className="channels-input timeout-amount"
+            type="number"
+            min={1}
+            step={1}
+            value={amountText}
+            onChange={(e) => {
+              setAmountText(e.target.value)
+              commitTimeout(e.target.value, unit)
+            }}
+            onBlur={() => setAmountText(String(splitDuration(timeoutSeconds).amount))}
+          />
+          <select
+            className="channels-input timeout-unit"
+            aria-label="Timeout unit"
+            value={unit}
+            onChange={(e) => {
+              const u = e.target.value as DurationUnit
+              setUnit(u)
+              commitTimeout(amountText, u)
+            }}
+          >
+            {DURATION_UNITS.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.label}
+              </option>
+            ))}
+          </select>
+          <span className="timeout-now">= {formatDuration(timeoutSeconds)} (Twitch allows 1 second to 2 weeks)</span>
+        </div>
+      </section>
+
+      <section className="setting">
+        <h3 className="setting-title">Mention alerts</h3>
+        <p className="setting-help">
+          Get alerted when someone types <code>@yourname</code> in any chat.
+          {myLogin ? <> Your Twitch name (<strong>{myLogin}</strong>) is always included.</> : <> Sign in to Twitch to include your Twitch name.</>}
+        </p>
+        <label className="check">
+          <input type="checkbox" checked={pingAlerts} onChange={(e) => setPingAlerts(e.target.checked)} /> Desktop notification when the app is in the background
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={pingSound} onChange={(e) => setPingSound(e.target.checked)} /> Play a sound
+        </label>
+        <label className="setting-help" htmlFor="ping-names">
+          Other names that count as you (for example your YouTube @handle), separated by commas
+        </label>
+        <input
+          id="ping-names"
+          className="channels-input"
+          type="text"
+          value={namesText}
+          placeholder="myhandle, othername"
+          onChange={(e) => setNamesText(e.target.value)}
+          onBlur={commitNames}
+          onKeyDown={(e) => e.key === 'Enter' && commitNames()}
+        />
+      </section>
+
       <section className="setting">
         <h3 className="setting-title">Stream info</h3>
         <label className="check">

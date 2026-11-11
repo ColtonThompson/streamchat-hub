@@ -35,13 +35,16 @@ import {
   type ChannelActivity,
   type ChatMessage,
   type FeedItem,
+  type EmoteGroup,
   type ModerationCommand,
   type ModerationEvent,
   type Platform,
   type PlatformStatus
 } from '../shared/types'
+import { TIMEOUT_MAX, TIMEOUT_MIN } from '../shared/duration'
 import { createAdapter } from './adapters'
 import type { ChatAdapter } from './adapters/base'
+import { buildGroups, TtlCache, type HelixEmote } from './emotes/picker'
 import { EmoteService } from './emotes/service'
 import { ACTIVITY_EVENTS, parseActivityEvent, parseRedemptionEvent, REDEMPTION_EVENTS } from './twitch/activity'
 import { parseTwitchPin, PinWatcher } from './twitch/pins'
@@ -51,7 +54,6 @@ import { EventSubClient, type EventSubState, type SocketLike } from './twitch/ev
 import { Helix } from './twitch/helix'
 
 /** Twitch's longest allowed timeout: two weeks, in seconds. */
-const MAX_TIMEOUT_SECONDS = 1_209_600
 /** Twitch user ids are numbers; message ids are UUID-like. These patterns reject anything odd. */
 const USER_ID = /^\d{1,20}$/
 const MESSAGE_ID = /^[A-Za-z0-9-]{1,64}$/
@@ -63,6 +65,10 @@ export class MessageBus {
   private queue: FeedItem[] = []
   private flushTimer: NodeJS.Timeout
   private emotes = new EmoteService()
+  /** Twitch emote lists for the picker, kept a few minutes each. */
+  private nativeGlobal = new TtlCache<HelixEmote[]>(60 * 60_000)
+  private nativeChannel = new TtlCache<HelixEmote[]>(15 * 60_000)
+  private userEmotes = new TtlCache<HelixEmote[]>(5 * 60_000)
   private helix: Helix
   private badges: BadgeService
   /**
@@ -309,6 +315,41 @@ export class MessageBus {
 
   // ---------------------------------------------------------------- requests from the UI
 
+  /**
+   * The emote picker's sections for a channel. Each Twitch lookup that fails (offline, missing permission) just leaves
+   * its section out, so the picker still shows whatever did load.
+   */
+  async listEmotes(platform: Platform, channel: string): Promise<EmoteGroup[]> {
+    if (platform !== 'twitch') return []
+    const broadcasterId = this.channelIds.get(`twitch:${channel}`)
+    const userId = this.auth.userId
+    const quiet = async (label: string, load: () => Promise<HelixEmote[] | undefined>): Promise<HelixEmote[] | undefined> => {
+      try {
+        return await load()
+      } catch (err) {
+        console.warn(`[emotes] picker: ${label} failed:`, err instanceof Error ? err.message : err)
+        return undefined
+      }
+    }
+    const [nativeGlobal, nativeChannel, userEmotes] = await Promise.all([
+      quiet('global', () => this.nativeGlobal.get('global', async () => (await this.helix.getGlobalEmotes()) ?? [])),
+      broadcasterId ? quiet('channel', () => this.nativeChannel.get(broadcasterId, async () => (await this.helix.getChannelEmotes(broadcasterId)) ?? [])) : undefined,
+      broadcasterId && userId && this.auth.canReadEmotes
+        ? quiet('yours', () => this.userEmotes.get(`${userId}:${broadcasterId}`, async () => (await this.helix.getUserEmotes(userId, broadcasterId)) ?? []))
+        : undefined
+    ])
+    const third = this.emotes.list('twitch', channel)
+    return buildGroups({
+      channelLogin: channel,
+      broadcasterId,
+      nativeGlobal: nativeGlobal ?? [],
+      nativeChannel: nativeChannel ?? [],
+      userEmotes: userEmotes && userEmotes.length > 0 ? userEmotes : undefined,
+      thirdChannel: third.channel,
+      thirdGlobal: third.global
+    })
+  }
+
   /** Send a chat message as the signed-in user. */
   async send(platform: Platform, channel: string, text: string): Promise<ActionResult> {
     if (platform !== 'twitch') return { ok: false, error: 'Sending is only available on Twitch for now.' }
@@ -348,7 +389,7 @@ export class MessageBus {
           return await this.helix.deleteMessage(broadcasterId, moderatorId, cmd.messageId)
         case 'timeout':
           if (!USER_ID.test(cmd.userId)) return { ok: false, error: 'Invalid user.' }
-          if (!Number.isInteger(cmd.durationSec) || cmd.durationSec < 1 || cmd.durationSec > MAX_TIMEOUT_SECONDS) {
+          if (!Number.isInteger(cmd.durationSec) || cmd.durationSec < TIMEOUT_MIN || cmd.durationSec > TIMEOUT_MAX) {
             return { ok: false, error: 'Timeout length must be between 1 second and 2 weeks.' }
           }
           return await this.helix.ban(broadcasterId, moderatorId, cmd.userId, cmd.durationSec)

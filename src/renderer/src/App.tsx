@@ -15,17 +15,20 @@ import { useEffect } from 'react'
 import { ActivityPanel } from './components/ActivityPanel'
 import { ChatFeed } from './components/ChatFeed'
 import { Composer } from './components/Composer'
+import { PermissionBanner } from './components/PermissionBanner'
 import { PinnedBar } from './components/PinnedBar'
 import { StreamInfoBar } from './components/StreamInfoBar'
 import { PlatformBar } from './components/PlatformBar'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsPanel } from './components/settings/SettingsPanel'
+import { UserPanel } from './components/UserPanel'
 import { Toast } from './components/Toast'
 import { subscribeToMain } from './store/chatStore'
 import { subscribeToLive } from './store/liveStore'
 import { useSettingsStore } from './store/settingsStore'
 import { useThemeSync } from './store/themeSync'
 import { subscribeToStreamInfo, useStreamInfoSync } from './store/streamInfoStore'
+import { subscribeToPings } from './lib/pingNotifier'
 import { subscribeToUpdates } from './store/updateStore'
 
 export default function App() {
@@ -33,6 +36,7 @@ export default function App() {
   useEffect(() => subscribeToUpdates(), [])
   useEffect(() => subscribeToLive(), [])
   useEffect(() => subscribeToStreamInfo(), [])
+  useEffect(() => subscribeToPings(), []) // sound / desktop alert when you are @mentioned
   useStreamInfoSync()
   useThemeSync()
   // Ctrl +/-/0 are spotted by the main process (so the default menu can't grab them) and arrive here.
@@ -46,6 +50,7 @@ export default function App() {
       {/* The drag region lets you move the window by grabbing this strip (see .titlebar in styles.css). */}
       <div className="titlebar">StreamChat Hub</div>
       <UpdateBanner />
+      <PermissionBanner />
       <PlatformBar />
       <StreamInfoBar />
       <ActivityPanel />
@@ -54,6 +59,7 @@ export default function App() {
       <Toast />
       <Composer />
       <SettingsPanel />
+      <UserPanel />
     </div>
   )
 }

@@ -1,0 +1,13 @@
+# Weekly pull requests for out-of-date npm packages and GitHub Actions, so security fixes (above all Electron's,
+# which ships a new major every ~8 weeks and supports only the latest three) are never missed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

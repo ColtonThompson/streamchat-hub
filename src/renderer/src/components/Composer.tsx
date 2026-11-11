@@ -8,6 +8,8 @@
  * the normal chat connection like everyone else's, so it shows with its emotes and badges for free.
  * If Twitch rejects it (slow mode, banned phrase...) the reason appears above the box.
  *
+ * EMOTES: the smiley button opens EmotePicker.tsx; clicking an emote there inserts its name at the cursor.
+ *
  * With several channels listed, a dropdown picks which one to send to.
  *
  * TAB COMPLETION: type "@" and the start of a name, press Tab, and it is completed with the most recent
@@ -17,8 +19,10 @@
  */
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { parseChannels } from '../../../shared/channels'
+import { insertEmote } from '../lib/emotepicker'
 import { completeMention, recentChatters, type CompletionSession } from '../lib/mentions'
 import { useChatStore } from '../store/chatStore'
+import { EmotePicker } from './EmotePicker'
 
 export function Composer() {
   const auth = useChatStore((s) => s.auth)
@@ -30,6 +34,7 @@ export function Composer() {
   const [target, setTarget] = useState('') // the channel picked in the dropdown
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [error, setError] = useState<string>()
   const inputRef = useRef<HTMLInputElement>(null)
   /** Where Tab completion left off, so pressing Tab again cycles. Cleared whenever you type. */
@@ -75,6 +80,19 @@ export function Composer() {
     }
   }
 
+  /** Put an emote's name into the message at the cursor (the input remembers its cursor while the picker has focus). */
+  function pickEmote(name: string) {
+    const input = inputRef.current
+    const start = input?.selectionStart ?? text.length
+    const end = input?.selectionEnd ?? text.length
+    const result = insertEmote(text, start, end, name, 500)
+    if (!result) return // would not fit in 500 characters
+    completion.current = undefined
+    pendingCursor.current = result.cursor
+    setText(result.text)
+    input?.focus()
+  }
+
   async function submit() {
     const message = text.trim()
     if (!message || !channel || busy) return
@@ -91,6 +109,7 @@ export function Composer() {
 
   return (
     <div className="composer">
+      {pickerOpen && ready && channel && <EmotePicker channel={channel} onPick={pickEmote} onClose={() => setPickerOpen(false)} />}
       {error && <p className="composer-error">{error}</p>}
       <div className="composer-row">
         {channels.length > 1 && (
@@ -115,6 +134,22 @@ export function Composer() {
           }}
           onKeyDown={onKeyDown}
         />
+        <button
+          className="composer-emote"
+          data-emote-toggle
+          disabled={!ready}
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          title="Emotes"
+          aria-label="Emotes"
+          onClick={() => setPickerOpen((o) => !o)}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M8.5 14.5c1 1.4 2.2 2 3.5 2s2.5-.6 3.5-2" />
+            <path d="M9 9.5h.01M15 9.5h.01" />
+          </svg>
+        </button>
         <button className="composer-send" disabled={!ready || busy || !text.trim()} onClick={() => void submit()}>
           Send
         </button>

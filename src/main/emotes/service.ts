@@ -86,6 +86,12 @@ export class EmoteService {
     await Promise.race([Promise.all(pending), new Promise<void>((r) => setTimeout(r, READY_TIMEOUT_MS).unref?.())])
   }
 
+  /** The third-party emotes a channel can use, for the picker: its own set and the global set. */
+  list(platform: string, channel: string): { channel: Emote[]; global: Emote[] } {
+    const channelMap = this.channels.get(`${platform}:${channel}`)?.map
+    return { channel: channelMap ? [...channelMap.values()] : [], global: [...this.globalMap.values()] }
+  }
+
   /** Returns a copy of the message with third-party emote words replaced by emote parts. */
   process(msg: ChatMessage): ChatMessage {
     if (msg.platform !== 'twitch') return msg // 3rd-party sets here are Twitch-specific for now

@@ -12,6 +12,8 @@
  */
 import { PLATFORMS } from '../../../shared/types'
 import { PLATFORM_META } from '../lib/platforms'
+import { updatePending } from '../lib/updates'
+import { useUpdateStore } from '../store/updateStore'
 import { useChatStore } from '../store/chatStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { ChannelInput } from './ChannelInput'
@@ -27,6 +29,7 @@ export function PlatformBar() {
   const showEvents = useChatStore((s) => s.showEvents)
   const toggleEvents = useChatStore((s) => s.toggleEvents)
   const openSettings = useSettingsStore((s) => s.openPanel)
+  const update = useUpdateStore((s) => updatePending(s.state)) // a new version is waiting: dot on the Settings button
 
   return (
     <header className="bar">
@@ -66,7 +69,7 @@ export function PlatformBar() {
         <button className="tool" onClick={clear}>
           Clear
         </button>
-        <button className="tool" onClick={() => openSettings()} title="Themes, timestamps, blacklist and accounts">
+        <button className="tool" onClick={() => openSettings()} title={update ? 'A new version is available (Settings > About)' : 'Themes, timestamps, blacklist and accounts'}>
           {/* A small "sliders" icon. `currentColor` makes it follow the button's text colour. */}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
@@ -74,6 +77,7 @@ export function PlatformBar() {
             <circle cx="8" cy="17" r="2" />
           </svg>
           Settings
+          {update && <span className="update-dot" role="img" aria-label="Update available" />}
         </button>
       </div>
     </header>
