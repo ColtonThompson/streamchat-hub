@@ -14,6 +14,7 @@
  */
 import type { AuthState, LoginOptions, Platform } from '../../../shared/types'
 
+export type PermissionId = 'moderation' | 'polls' | 'redemptions' | 'follows' | 'emotes'
 
 export interface PermissionInfo {
   id: PermissionId
@@ -41,6 +42,12 @@ export const PERMISSIONS: PermissionInfo[] = [
     label: 'Reward redemptions',
     enables: 'Channel Points rewards that viewers redeem show up as events in the chat. Your own channel only.',
     granted: (a) => !!a.canReadRedemptions
+  },
+  {
+    id: 'emotes',
+    label: 'Your emotes',
+    enables: 'The emote button lists exactly the emotes you can use in each channel (your subscriptions, follower emotes, bits).',
+    granted: (a) => !!a.canReadEmotes
   },
   {
     id: 'follows',
