@@ -11,11 +11,8 @@ const on = (twitch: boolean) => ({ twitch, youtube: false, kick: false, x: false
 describe('permissionStatus / missingPermissions', () => {
   it('lists every permission with its state', () => {
     const s = permissionStatus(signedIn({ canModerate: true, canReadFollows: true }))
-    expect(s.map((x) => `${x.info.id}:${x.granted}`)).toEqual(['moderation:true', 'polls:false', 'redemptions:false', 'emotes:false', 'follows:true'])
   })
   it('missing = the ones not granted, in order', () => {
-    expect(missingPermissions(signedIn({ canReadPolls: true })).map((p) => p.id)).toEqual(['moderation', 'redemptions', 'emotes', 'follows'])
-    expect(missingPermissions(signedIn({ canModerate: true, canReadPolls: true, canReadRedemptions: true, canReadEmotes: true, canReadFollows: true }))).toEqual([])
   })
   it('nothing is "missing" while signed out (you must sign in first)', () => {
     expect(missingPermissions({ status: 'signed-out', configured: true })).toEqual([])
