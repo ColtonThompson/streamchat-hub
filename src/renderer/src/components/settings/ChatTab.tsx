@@ -188,8 +188,9 @@ export function ChatTab() {
           Show stream title and viewer count
         </label>
         <p className="setting-help">
-          Appears above the chat when you are reading just one Twitch channel or one YouTube stream. Turn it off if you would rather
-          not see viewer counts; nothing is looked up while it is off. Twitch needs you to be signed in.
+          Appears above the chat for one channel: the first one you added, or the one you pick with the star in the Channels menu.
+          Turn it off if you would rather not see viewer counts; nothing is looked up while it is off. Twitch needs you to be
+          signed in.
         </p>
       </section>
 

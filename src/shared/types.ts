@@ -86,6 +86,7 @@ export type EventType =
   | 'redemption' // a viewer spent Channel Points on a reward (Twitch)
   | 'moderation'
   | 'notice'
+  | 'break' // a divider the app adds when a channel joins or leaves the feed (renderer/src/lib/channelbreaks.ts)
 
 /** Data for a channel-event row. A row with `event` set is drawn as an event, not a chat line. */
 export interface ChatEvent {
@@ -362,7 +363,7 @@ export type UpdateState =
   | { status: 'ready'; version: string; next: string }
   | { status: 'error'; version: string; message: string }
 
-/** A channel you follow that is live right now (for the Twitch box's suggestions). */
+/** A channel you follow that is live right now (for the Add channel window's list). */
 export interface LiveChannel {
   login: string
   name: string

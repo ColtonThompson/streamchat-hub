@@ -6,7 +6,7 @@
  *
  * FILTERS APPLIED, in one pass over the messages:
  *   - platform switched off      -> hidden
- *   - event row, events turned off -> hidden
+ *   - event row, events turned off -> hidden (except the "joined / left" dividers, which always show)
  *   - chat line matching the blacklist -> hidden
  * Nothing is deleted; a hidden message is simply not in the returned list.
  *
@@ -57,6 +57,11 @@ export function buildRows(messages: ChatMessage[], filters: FeedFilters, memory:
   const out: Row[] = []
   let prev: 0 | 1 = 1
   for (const msg of messages) {
+    // A "joined / left" divider is not a chat line: it shows whatever the filters say and does not flip the shading.
+    if (msg.event?.type === 'break') {
+      if (filters.enabled[msg.platform]) out.push({ msg, alt: prev })
+      continue
+    }
     if (!filters.enabled[msg.platform] || (msg.event && !filters.showEvents) || filters.isBlacklisted(msg)) continue
     let alt = map.get(msg.id)
     if (alt === undefined) {

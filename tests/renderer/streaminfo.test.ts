@@ -2,38 +2,50 @@
  * tests/renderer/streaminfo.test.ts: when the title/viewers bar applies, and for which stream.
  */
 import { describe, expect, it } from 'vitest'
-import { formatViewers, streamInfoTarget } from '../../src/renderer/src/lib/streaminfo'
+import { allChannels, channelKey, formatViewers, primaryChannel, streamInfoTarget } from '../../src/renderer/src/lib/streaminfo'
 import type { Platform } from '../../src/shared/types'
 
-const off = { twitch: false, youtube: false, kick: false, x: false, tiktok: false } as Record<Platform, boolean>
 const text = { twitch: '', youtube: '', kick: '', x: '', tiktok: '' } as Record<Platform, string>
-const on = (...p: Platform[]) => ({ ...off, ...Object.fromEntries(p.map((x) => [x, true])) }) as Record<Platform, boolean>
+const ch = (over: Partial<Record<Platform, string>>) => ({ ...text, ...over })
 
-describe('streamInfoTarget', () => {
-  it('one Twitch channel -> that channel', () => {
-    expect(streamInfoTarget(true, on('twitch'), { ...text, twitch: 'Nightleaf' })).toEqual({ platform: 'twitch', source: 'nightleaf' })
+describe('allChannels', () => {
+  it('lists Twitch first, then YouTube, each platform in the order added, cleaned', () => {
+    expect(allChannels(ch({ twitch: 'B, twitch.tv/a', youtube: '@Yy1 https://youtu.be/dQw4w9WgXcQ' }))).toEqual([
+      { platform: 'twitch', source: 'b' },
+      { platform: 'twitch', source: 'a' },
+      { platform: 'youtube', source: '@yy1' },
+      { platform: 'youtube', source: 'dQw4w9WgXcQ' }
+    ])
   })
-  it('one YouTube stream -> that stream (handle, id or link)', () => {
-    expect(streamInfoTarget(true, on('youtube'), { ...text, youtube: '@MyChannel' })).toEqual({ platform: 'youtube', source: '@mychannel' })
-    expect(streamInfoTarget(true, on('youtube'), { ...text, youtube: 'https://youtu.be/dQw4w9WgXcQ' })).toEqual({ platform: 'youtube', source: 'dQw4w9WgXcQ' })
+  it('is empty with nothing typed or only junk', () => {
+    expect(allChannels(text)).toEqual([])
+    expect(allChannels(ch({ twitch: '!!!' }))).toEqual([])
   })
-  it('the setting off -> nothing', () => {
-    expect(streamInfoTarget(false, on('twitch'), { ...text, twitch: 'a' })).toBeNull()
+  it('channelKey is platform:source', () => {
+    expect(channelKey({ platform: 'youtube', source: '@abc' })).toBe('youtube:@abc')
   })
-  it('several streams -> nothing (it would be ambiguous)', () => {
-    expect(streamInfoTarget(true, on('twitch'), { ...text, twitch: 'a, b' })).toBeNull()
-    expect(streamInfoTarget(true, on('twitch', 'youtube'), { ...text, twitch: 'a', youtube: '@b123' })).toBeNull()
-    expect(streamInfoTarget(true, on('youtube'), { ...text, youtube: '@aaa @bbb' })).toBeNull()
+})
+
+describe('primaryChannel / streamInfoTarget', () => {
+  it('one channel -> that channel (Twitch, or YouTube handle / id / link)', () => {
+    expect(streamInfoTarget(true, ch({ twitch: 'Nightleaf' }), '')).toEqual({ platform: 'twitch', source: 'nightleaf' })
+    expect(streamInfoTarget(true, ch({ youtube: '@MyChannel' }), '')).toEqual({ platform: 'youtube', source: '@mychannel' })
+    expect(streamInfoTarget(true, ch({ youtube: 'https://youtu.be/dQw4w9WgXcQ' }), '')).toEqual({ platform: 'youtube', source: 'dQw4w9WgXcQ' })
   })
-  it('another platform switched on counts as a second source', () => {
-    expect(streamInfoTarget(true, on('twitch', 'kick'), { ...text, twitch: 'a' })).toBeNull()
+  it('several channels: still one stream, the chosen one', () => {
+    const c = ch({ twitch: 'a, b', youtube: '@bbb' })
+    expect(streamInfoTarget(true, c, 'twitch:b')).toEqual({ platform: 'twitch', source: 'b' })
+    expect(streamInfoTarget(true, c, 'youtube:@bbb')).toEqual({ platform: 'youtube', source: '@bbb' })
   })
-  it('a platform that is off does not count, even with channels typed', () => {
-    expect(streamInfoTarget(true, on('twitch'), { ...text, twitch: 'a', youtube: '@bbb' })).toEqual({ platform: 'twitch', source: 'a' })
+  it('no choice, or a choice that was removed -> the first channel', () => {
+    const c = ch({ twitch: 'a, b' })
+    expect(streamInfoTarget(true, c, '')).toEqual({ platform: 'twitch', source: 'a' })
+    expect(streamInfoTarget(true, c, 'twitch:gone')).toEqual({ platform: 'twitch', source: 'a' })
   })
-  it('nothing on, or nothing typed -> nothing', () => {
-    expect(streamInfoTarget(true, off, text)).toBeNull()
-    expect(streamInfoTarget(true, on('twitch'), text)).toBeNull()
+  it('the setting off, or no channels -> nothing', () => {
+    expect(streamInfoTarget(false, ch({ twitch: 'a' }), '')).toBeNull()
+    expect(streamInfoTarget(true, text, '')).toBeNull()
+    expect(primaryChannel(text, 'twitch:a')).toBeNull()
   })
 })
 

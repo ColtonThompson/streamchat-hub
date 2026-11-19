@@ -52,7 +52,7 @@ export const PERMISSIONS: PermissionInfo[] = [
   {
     id: 'follows',
     label: 'Go-live alerts',
-    enables: 'Desktop notifications when a channel you follow goes live, and picking live channels in the Twitch box.',
+    enables: 'Desktop notifications when a channel you follow goes live, and picking live channels in the Add channel window.',
     granted: (a) => !!a.canReadFollows
   }
 ]
@@ -84,7 +84,7 @@ const join = (parts: string[]) => (parts.length > 1 ? `${parts.slice(0, -1).join
 /**
  * A notice for something the user is trying to do right now that their permissions cannot do yet. Today that is
  * reading their OWN channel (the only place polls, predictions and redemptions exist) without those permissions.
- * `twitchChannels` is the text of the Twitch box.
+ * `twitchChannels` is the saved Twitch channel list.
  */
 export function permissionNotice(auth: AuthState, enabled: Record<Platform, boolean>, twitchChannels: string): PermissionNotice | null {
   if (auth.status !== 'signed-in' || !auth.login || !enabled.twitch) return null

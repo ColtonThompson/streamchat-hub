@@ -1,84 +1,72 @@
 /**
- * renderer/src/components/PlatformBar.tsx   (the control panel at the top)
+ * renderer/src/components/PlatformBar.tsx   (the control bar at the top)
  *
- * WHAT: Platform on/off chips, the Twitch and YouTube channel boxes, and the small tool buttons
- *       (pin on top, show events, clear, settings).
+ * WHAT: Left: the "Add channel" button, the "Channels" menu (everything you are reading; leave a channel or pick whose
+ *       title is shown) and, in red, any connection problem. Right: "Show events", and icon buttons (with tooltips) for
+ *       pin-on-top and clear, then the Settings cogwheel in the top right corner.
  *
- * Account sign-in used to live here; it now lives in Settings -> Accounts to keep this bar compact.
- *
- * Each chip shows connection status with a coloured dot (grey = off, pulsing = connecting,
- * glowing = connected, red = error); hovering shows the status detail. Clicking calls
- * `togglePlatform` in the store, which asks the main process to connect or disconnect.
+ * There are no per-platform switches: a platform connects when it has a channel and disconnects when its last channel
+ * is removed (chatStore.setChannels), and the channels of the last session are reconnected at startup
+ * (chatStore.resume). Account sign-in lives in Settings -> Accounts.
  */
 import { PLATFORMS } from '../../../shared/types'
 import { PLATFORM_META } from '../lib/platforms'
 import { updatePending } from '../lib/updates'
 import { useUpdateStore } from '../store/updateStore'
+import { useAddChannelStore } from '../store/addChannelStore'
 import { useChatStore } from '../store/chatStore'
 import { useSettingsStore } from '../store/settingsStore'
-import { ChannelInput } from './ChannelInput'
+import { ChannelsMenu } from './ChannelsMenu'
+import { IconButton } from './IconButton'
 
 export function PlatformBar() {
   // Each line reads ONE piece of state, so this component only re-renders when those change.
   const enabled = useChatStore((s) => s.enabled)
   const status = useChatStore((s) => s.status)
-  const toggle = useChatStore((s) => s.togglePlatform)
   const alwaysOnTop = useChatStore((s) => s.alwaysOnTop)
   const toggleTop = useChatStore((s) => s.toggleAlwaysOnTop)
   const clear = useChatStore((s) => s.clear)
   const showEvents = useChatStore((s) => s.showEvents)
   const toggleEvents = useChatStore((s) => s.toggleEvents)
+  const showAdd = useAddChannelStore((s) => s.show)
   const openSettings = useSettingsStore((s) => s.openPanel)
   const update = useUpdateStore((s) => updatePending(s.state)) // a new version is waiting: dot on the Settings button
 
+  const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
+
   return (
     <header className="bar">
-      <div className="chips" role="group" aria-label="Platforms">
-        {PLATFORMS.map((p) => {
-          const meta = PLATFORM_META[p]
-          const st = status[p].state
-          return (
-            <button
-              key={p}
-              className="chip"
-              data-on={enabled[p]} // CSS styles the chip via these data-* attributes (see styles.css)
-              data-state={st}
-              style={{ ['--accent' as string]: meta.color }} // passes the platform colour to CSS
-              onClick={() => toggle(p)}
-              aria-pressed={enabled[p]}
-              title={`${meta.label}: ${status[p].detail ?? st}`}
-            >
-              <span className="chip-dot" />
-              {meta.label}
-            </button>
-          )
-        })}
-      </div>
-      {/* One box per platform that has a real adapter; the others still use the mock feed. */}
-      <div className="channel-row">
-        <ChannelInput platform="twitch" />
-        <ChannelInput platform="youtube" />
-      </div>
-      <div className="tools">
-        <button className="tool" data-on={alwaysOnTop} onClick={toggleTop} aria-pressed={alwaysOnTop}>
-          Pin on top
+      <div className="bar-left">
+        <button className="add-channel" onClick={() => showAdd()}>
+          <span aria-hidden="true">+</span> Add channel
         </button>
-        <button className="tool" data-on={showEvents} onClick={toggleEvents} aria-pressed={showEvents}>
+        <ChannelsMenu />
+        {PLATFORMS.filter((p) => enabled[p] && status[p].state === 'error').map((p) => (
+          <span key={p} className="channels-error" role="alert">
+            {PLATFORM_META[p].label}: {status[p].detail}
+          </span>
+        ))}
+      </div>
+      <div className="bar-right">
+        <button className="tool" data-on={showEvents} onClick={toggleEvents} aria-pressed={showEvents} title="Show subs, raids, polls and other events in the chat">
           Show events
         </button>
-        <button className="tool" onClick={clear}>
-          Clear
-        </button>
-        <button className="tool" onClick={() => openSettings()} title={update ? 'A new version is available (Settings > About)' : 'Themes, timestamps, blacklist and accounts'}>
-          {/* A small "sliders" icon. `currentColor` makes it follow the button's text colour. */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
-            <circle cx="16" cy="7" r="2" />
-            <circle cx="8" cy="17" r="2" />
+        <IconButton label={alwaysOnTop ? 'Pin on top: on (keeps this window above other windows)' : 'Pin on top: keep this window above other windows'} pressed={alwaysOnTop} onClick={toggleTop}>
+          <svg {...icon}>
+            <path d="M9 4h6l-1 6 4 3H6l4-3-1-6zM12 13v7" />
           </svg>
-          Settings
-          {update && <span className="update-dot" role="img" aria-label="Update available" />}
-        </button>
+        </IconButton>
+        <IconButton label="Clear the chat" onClick={clear}>
+          <svg {...icon}>
+            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3" />
+          </svg>
+        </IconButton>
+        <IconButton label={update ? 'Settings (a new version is available)' : 'Settings'} align="end" dot={update ? 'Update available' : undefined} onClick={() => openSettings()}>
+          <svg {...icon}>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+          </svg>
+        </IconButton>
       </div>
     </header>
   )

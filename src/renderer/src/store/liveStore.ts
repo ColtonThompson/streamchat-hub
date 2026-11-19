@@ -2,7 +2,7 @@
  * renderer/src/store/liveStore.ts   (which followed Twitch channels are live)
  *
  * WHAT: A small Zustand store with the list the main process keeps (main/livewatch.ts), used for the
- * suggestions under the Twitch channels box. Empty when the go-live permission hasn't been granted.
+ * list of live followed channels in the Add channel window. Empty when the go-live permission hasn't been granted.
  * `subscribeToLive()` loads the current list once, then follows pushes. App.tsx calls it at startup.
  */
 import { create } from 'zustand'

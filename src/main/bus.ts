@@ -16,7 +16,7 @@
  *   - Both validate their input (it came from the UI, which is untrusted) and then call Helix.
  *
  * POLLS & PREDICTIONS: when you are signed in with the polls permission, Twitch is on, and your OWN channel
- *   is in the Twitch box, the bus opens an EventSub connection (twitch/eventsub.ts). Its events become a
+ *   is in your feed, the bus opens an EventSub connection (twitch/eventsub.ts). Its events become a
  *   live card state (`activity` items) plus a few feed rows. See `syncActivity` below.
  *
  * ORDERING: messages and moderation updates all go through `this.chain`, a promise chain that
@@ -79,7 +79,7 @@ export class MessageBus {
   private unsubscribeAuth: () => void
   /** Serializes processing so order is preserved (see "ORDERING" above). */
   private chain: Promise<void> = Promise.resolve()
-  /** The channel names currently typed in the Twitch box (to know whether YOUR channel is among them). */
+  /** The channel names currently in your Twitch feed (to know whether YOUR channel is among them). */
   private twitchChannels: string[] = []
   /** The poll/prediction connection, when one is running. */
   private activityClient?: EventSubClient

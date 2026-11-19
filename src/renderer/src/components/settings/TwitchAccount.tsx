@@ -65,8 +65,8 @@ export function TwitchAccount() {
         )}
         {(auth.canReadPolls || auth.canReadRedemptions) && (
           <p className="setting-help">
-            Polls, predictions and reward redemptions show for your own channel: add <strong>{auth.login}</strong> to the Twitch
-            box and switch Twitch on.
+            Polls, predictions and reward redemptions show for your own channel: add <strong>{auth.login}</strong> with the
+            Add channel button.
           </p>
         )}
         {auth.canReadFollows ? (

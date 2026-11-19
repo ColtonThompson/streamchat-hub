@@ -79,13 +79,14 @@ body {
    3. TOP BAR AND CONTROLS
    ============================================================================================ */
 .bar {
-  flex: none; display: flex; flex-direction: column; gap: 10px;
-  padding: 4px 12px 12px; border-bottom: 1px solid var(--line);
+  flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  padding: 4px 12px 10px; border-bottom: 1px solid var(--line);
 }
-.chips, .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.bar-left, .bar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.bar-right { margin-left: auto; }
 
-/* Platform chips and tool buttons share a base look. */
-.chip, .tool {
+/* Text tool buttons (Show events, Channels...). The icon buttons below share the same colours. */
+.tool {
   font: inherit; font-size: 12.5px; font-weight: 600;
   color: var(--muted); background: var(--panel);
   border: 1px solid var(--line); border-radius: 999px;
@@ -93,17 +94,28 @@ body {
   display: inline-flex; align-items: center; gap: 7px;
   transition: background .15s, color .15s, border-color .15s;
 }
-.chip:hover, .tool:hover { color: var(--text); }
-.chip:focus-visible, .tool:focus-visible, .jump:focus-visible { outline: 2px solid var(--accent, var(--accent-default)); outline-offset: 2px; }
-
-/* The status dot inside a chip. Which state applies is set by data-state; `--accent` is the platform colour. */
-.chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
-.chip[data-on='true'] { color: var(--text); border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-.chip[data-state='connected'] .chip-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-.chip[data-state='connecting'] .chip-dot { background: var(--accent); animation: pulse 1s infinite; }
-.chip[data-state='error'] .chip-dot { background: #ff5a5f; }
+.tool:hover { color: var(--text); }
+.tool:focus-visible, .jump:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent, var(--accent-default)); outline-offset: 2px; }
 
 .tool { border-radius: 8px; font-weight: 500; }
+
+/* Icon-only buttons with a tooltip (components/IconButton.tsx). The tooltip is drawn from data-tip below the button. */
+.icon-btn {
+  position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.icon-btn:hover { color: var(--text); }
+.icon-btn[data-on='true'] { color: var(--text); border-color: var(--accent-default); background: color-mix(in srgb, var(--accent-default) 16%, var(--panel)); }
+.icon-btn::after {
+  content: attr(data-tip); position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: max-content; max-width: 240px;
+  padding: 5px 9px; font-size: 12px; font-weight: 500; line-height: 1.35; text-align: left; white-space: normal;
+  color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow);
+  opacity: 0; pointer-events: none; transform: translateY(-2px); transition: opacity .12s .35s, transform .12s .35s;
+}
+.icon-btn[data-tip-align='end']::after { left: auto; right: 0; }
+.icon-btn:hover::after, .icon-btn:focus-visible::after { opacity: 1; transform: none; }
+.icon-btn-dot { position: absolute; top: 3px; right: 3px; margin: 0; width: 8px; height: 8px; }
 .tool[data-on='true'] { color: var(--text); border-color: var(--accent-default); }
 
 @keyframes pulse { 50% { opacity: .25; } }
@@ -131,36 +143,32 @@ body {
 .channels-input:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
 .channels-error { font-size: 12px; color: var(--danger-text); }
 
-/* ---- Twitch box suggestions (live channels you follow) ---- */
-.channels-field { position: relative; display: flex; flex-direction: column; }
-.channels-field[data-list='true'] .channels-input { padding-right: 78px; }
-.channels-toggle {
-  position: absolute; top: 3px; right: 3px; bottom: 3px; display: flex; align-items: center; gap: 5px;
-  font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; border-radius: 6px;
-  padding: 0 7px; cursor: pointer;
+/* ---- "Add channel" window (components/AddChannelModal.tsx; reuses the .mp window look) ---- */
+.ac { width: min(460px, 100%); }
+.ac-body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; overflow-y: auto; }
+.ac-platforms { display: flex; gap: 6px; margin-bottom: 4px; }
+.ac-platform {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer;
 }
-.channels-toggle:hover { color: var(--text); background: var(--line); }
-.channels-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff4d5e; }
-.suggest {
-  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px;
-  list-style: none; max-height: 240px; overflow-y: auto;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow);
+.ac-platform:hover { color: var(--text); }
+.ac-platform[data-on='true'] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+.ac-platform:focus-visible, .add-channel:focus-visible, .ac-live-item:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.ac-note { margin: 0; font-size: 12px; color: var(--muted); min-height: 1.4em; }
+.ac-note[data-error] { color: var(--danger-text); }
+.ac-live { list-style: none; margin: 0; padding: 0; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.ac-live-item {
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name viewers' 'game viewers';
+  column-gap: 10px; align-items: center; text-align: left; font: inherit; font-size: 13px; color: var(--text);
+  background: none; border: 0; border-radius: 6px; padding: 5px 8px; cursor: pointer;
 }
-.suggest-item {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'check name viewers' 'check game game';
-  column-gap: 9px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
-}
-.suggest-item[data-active='true'] { background: color-mix(in srgb, var(--accent-default) 24%, transparent); }
-.suggest-check {
-  grid-area: check; align-self: center; width: 16px; height: 16px; border: 1.5px solid var(--muted); border-radius: 4px;
-  display: grid; place-items: center; font-size: 11px; font-weight: 800; line-height: 1; color: var(--on-accent);
-}
-.suggest-item[data-checked='true'] .suggest-check { background: var(--accent-default); border-color: var(--accent-default); }
-.suggest-name { grid-area: name; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.suggest-game { grid-area: game; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.suggest-viewers { grid-area: viewers; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.suggest-viewers::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #ff4d5e; }
-.suggest-empty { padding: 6px 8px; font-size: 12px; color: var(--muted); }
+.ac-live-item:hover { background: color-mix(in srgb, var(--accent-default) 18%, transparent); }
+.ac-live-name { grid-area: name; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-live-game { grid-area: game; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-live-viewers { grid-area: viewers; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ac-live-viewers::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #ff4d5e; }
+.mp-btn.ac-submit { background: var(--accent-default); color: var(--on-accent); border-color: transparent; font-weight: 700; }
+.mp-btn.ac-submit:disabled { opacity: .4; cursor: default; }
 
 /* ============================================================================================
    5. MESSAGE ROWS   base look, alternating shade, hover
@@ -171,6 +179,42 @@ body {
      font-size scales the text, the platform square, the padding and the badges together. */
   font-size: calc(14px * var(--chat-zoom, 1));
 } /* min-height:0 lets the list scroll instead of growing */
+
+/* The chat and the chatters list (ChattersPanel.tsx) side by side; the ellipsis button floats at the top right when it is closed. */
+.feed-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+.feed-wrap > .feed, .feed-wrap > .empty { min-width: 0; }
+.chatters-toggle { position: absolute; z-index: 15; top: 6px; right: 18px; opacity: .75; transition: opacity .15s; }
+.chatters-toggle:hover, .chatters-toggle:focus-within { opacity: 1; }
+.chatters { flex: none; width: 230px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--bg); }
+.chatters-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--line); }
+.chatters-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+.chatters-total { margin-left: 4px; font-weight: 600; color: var(--muted); }
+.chatters-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0 12px; user-select: text; }
+.chatters-empty { margin: 0; padding: 10px 12px; font-size: 12.5px; color: var(--muted); }
+.chatters-platform { padding-bottom: 6px; }
+/* A line between platforms (not above the first one). */
+.chatters-platform + .chatters-platform { margin-top: 6px; border-top: 1px solid var(--line); }
+.chatters-platform-name { position: sticky; top: 0; z-index: 1; margin: 0; background: var(--bg); }
+.chatters-fold {
+  width: 100%; display: flex; align-items: center; gap: 6px; padding: 8px 12px 4px; font: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; text-align: left; color: var(--accent); background: none; border: 0; cursor: pointer;
+}
+.chatters-fold:hover { filter: brightness(1.2); }
+.chatters-fold:focus-visible { outline: 2px solid var(--accent-default); outline-offset: -2px; }
+.chatters-chevron { flex: none; transition: transform .15s; }
+.chatters-platform[data-collapsed='true'] .chatters-chevron { transform: rotate(-90deg); }
+.chatters-platform[data-collapsed='true'] { padding-bottom: 2px; }
+.chatters-platform-name span, .chatters-role-name span { margin-left: 3px; font-weight: 600; color: var(--muted); }
+.chatters-role-name { margin: 6px 0 2px; padding: 0 12px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.chatters-role[data-role='broadcaster'] .chatters-role-name { color: #ff7a59; }
+.chatters-role[data-role='moderator'] .chatters-role-name { color: #4ade80; }
+.chatters-role[data-role='vip'] .chatters-role-name { color: #f472b6; }
+.chatters-list { list-style: none; margin: 0; padding: 0; }
+.chatters-name { padding: 0; font-size: 13px; color: var(--text); }
+.chatters-name > span, .chatters-user { display: block; width: 100%; padding: 2px 12px 2px 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatters-user { font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; }
+.chatters-user:focus-visible { outline: 2px solid var(--accent-default); outline-offset: -2px; }
+.chatters-name:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* One row. `--row-bg` is the row's background colour; later rules just change this variable, and
    `background` reads it, so shading, hover and event tints all combine cleanly. */
@@ -272,9 +316,45 @@ body {
   display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 999px;
   font-size: .79em; font-weight: 800; color: #14111b; background: var(--tier, #ffd166); vertical-align: 1px;
 }
-/* Channel boxes: one per platform that can read chat; side by side when there is room. */
-.channel-row { display: flex; flex-wrap: wrap; gap: 10px; }
-.channel-row .channels { flex: 1 1 220px; }
+/* Top bar: the "Add channel" button. */
+.add-channel {
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--on-accent); background: var(--accent-default);
+  border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.add-channel:hover { filter: brightness(1.1); }
+
+/* The Channels menu: a button with a count, and a small list of the channels in the feed. */
+.channels-menu { position: relative; }
+.channels-count { min-width: 18px; padding: 0 5px; text-align: center; font-size: 11.5px; font-weight: 700; color: var(--text); background: var(--line); border-radius: 9px; }
+.channels-pop {
+  position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: min(320px, 90vw); padding: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px var(--shadow);
+}
+.channels-rows { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.channels-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+.channels-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.channels-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.channels-dot[data-state='connected'] { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.channels-dot[data-state='connecting'] { background: var(--accent); animation: pulse 1s infinite; }
+.channels-dot[data-state='error'] { background: #ff5a5f; }
+.channels-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channels-act {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; font: inherit; font-size: 15px; line-height: 1;
+  color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+}
+.channels-act:hover { color: var(--text); background: var(--line); }
+.channels-act[data-on='true'] { color: #ffd166; }
+.channels-act[data-danger='true']:hover { color: var(--danger-text); }
+.channels-act:focus-visible, .channels-add:focus-visible { outline: 2px solid var(--accent-default); outline-offset: 1px; }
+.channels-add { width: 100%; margin-top: 4px; padding: 6px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); background: none; border: 1px dashed var(--line); border-radius: 6px; cursor: pointer; }
+.channels-add:hover { color: var(--text); border-color: var(--muted); }
+
+/* "Joined / left" divider in the feed (components/FeedBreak.tsx). Scales with the chat zoom like the rows do. */
+.feed-break { display: flex; align-items: center; gap: .8em; padding: .7em .9em; font-size: calc(13px * var(--chat-zoom, 1)); }
+.feed-break-line { flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.feed-break-text { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.feed-break[data-kind='left'] .feed-break-text { color: var(--muted); }
+.feed-break-time { margin-left: .7em; font-weight: 400; font-size: .85em; color: var(--muted); }
 
 /* ============================================================================================
    8. MOD USER PANEL, TOAST, COMPOSER
@@ -354,6 +434,15 @@ body {
 }
 .composer-send:disabled { opacity: .4; cursor: default; }
 .composer { position: relative; }
+/* @mention suggestions: a small list above the message box. */
+.mention-list {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% - 6px); z-index: 20; margin: 0; padding: 4px; list-style: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  max-height: 240px; overflow-y: auto;
+}
+.mention-item { padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 13px; color: var(--text); }
+.mention-item[data-selected] { background: var(--accent-default); color: var(--on-accent); }
+.mention-hint { padding: 4px 8px 2px; font-size: 11px; color: var(--placeholder); }
 .composer-emote {
   flex: none; display: grid; place-items: center; width: 36px; color: var(--muted); background: var(--panel);
   border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
@@ -595,8 +684,10 @@ body {
 
 /* ---- STREAM INFO: title + viewers above the chat (components/StreamInfoBar.tsx) ---- */
 .streaminfo { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--line); background: var(--bg); font-size: 13px; min-width: 0; }
+.streaminfo-where { flex: none; font-weight: 700; color: var(--text); }
 .streaminfo-state { flex: none; font-size: 11px; font-weight: 800; letter-spacing: .05em; color: var(--muted); }
-.streaminfo[data-live='true'] .streaminfo-state { color: #ff5d6c; }
+.streaminfo[data-live='true'] .streaminfo-where { flex: none; font-weight: 700; color: var(--text); }
+.streaminfo-state { color: #ff5d6c; }
 .streaminfo-title { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .streaminfo-game { flex: none; max-width: 30%; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .streaminfo-viewers { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }

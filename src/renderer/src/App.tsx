@@ -2,8 +2,8 @@
  * renderer/src/App.tsx   (the root component: the screen's overall layout)
  *
  * LAYOUT (top to bottom):
- *   title bar -> update banner (only when an update is ready) -> platform bar (toggles, channels, tools) -> poll/prediction cards (only when one is running)
- *   -> chat feed -> toast -> message box
+ *   title bar -> update banner (only when an update is ready) -> top bar (Add channel, Channels, tools, Settings) -> poll/prediction cards (only when one is running)
+ *   -> chat feed (with the chatters list on its right when open) -> toast -> message box
  * The Settings panel is drawn on top of all of this when open (it covers everything below the title bar).
  *
  * It also keeps the colours in step with the chosen theme (`useThemeSync`), and connects the UI to the
@@ -14,6 +14,7 @@
 import { useEffect } from 'react'
 import { ActivityPanel } from './components/ActivityPanel'
 import { ChatFeed } from './components/ChatFeed'
+import { ChattersPanel } from './components/ChattersPanel'
 import { Composer } from './components/Composer'
 import { PermissionBanner } from './components/PermissionBanner'
 import { PinnedBar } from './components/PinnedBar'
@@ -21,9 +22,10 @@ import { StreamInfoBar } from './components/StreamInfoBar'
 import { PlatformBar } from './components/PlatformBar'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsPanel } from './components/settings/SettingsPanel'
+import { AddChannelModal } from './components/AddChannelModal'
 import { UserPanel } from './components/UserPanel'
 import { Toast } from './components/Toast'
-import { subscribeToMain } from './store/chatStore'
+import { subscribeToMain, useChatStore } from './store/chatStore'
 import { subscribeToLive } from './store/liveStore'
 import { useSettingsStore } from './store/settingsStore'
 import { useThemeSync } from './store/themeSync'
@@ -32,7 +34,11 @@ import { subscribeToPings } from './lib/pingNotifier'
 import { subscribeToUpdates } from './store/updateStore'
 
 export default function App() {
-  useEffect(() => subscribeToMain(), [])
+  useEffect(() => {
+    const off = subscribeToMain()
+    useChatStore.getState().resume() // reconnect the channels you had open last time
+    return off
+  }, [])
   useEffect(() => subscribeToUpdates(), [])
   useEffect(() => subscribeToLive(), [])
   useEffect(() => subscribeToStreamInfo(), [])
@@ -55,11 +61,16 @@ export default function App() {
       <StreamInfoBar />
       <ActivityPanel />
       <PinnedBar />
-      <ChatFeed />
+      {/* The chat, with the chatters list (opened by the ellipsis button) beside it. */}
+      <div className="feed-wrap">
+        <ChatFeed />
+        <ChattersPanel />
+      </div>
       <Toast />
       <Composer />
       <SettingsPanel />
       <UserPanel />
+      <AddChannelModal />
     </div>
   )
 }

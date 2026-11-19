@@ -4,9 +4,10 @@
  * WHAT: Pure helpers (no React, no store) for two features around "@username":
  *   1. HIGHLIGHTING: `splitMentions` cuts a message's text into plain pieces and @mention pieces, so
  *      MessageRow can draw each mention as a chip (components/MentionChip.tsx).
- *   2. TAB COMPLETION: when you type "@sh" in the message box and press Tab, `completeMention` finishes
- *      it with the most recent chatter whose name starts with "sh"; Tab again cycles to the next match
- *      (Shift+Tab goes back). The message box (components/Composer.tsx) just calls it.
+ *   2. TAB COMPLETION: when you type "@sh" in the message box, `mentionSuggestions` lists the chatters it could
+ *      mean (names starting with "sh" first, newest chatter first, then names that merely contain it), and Tab
+ *      (`completeMention`) finishes it with the highlighted one; Tab again cycles to the next match
+ *      (Shift+Tab goes back). The message box (components/Composer.tsx) shows the list and calls these.
  *
  * Being pure makes them easy to test: same input, same output.
  *
@@ -73,6 +74,29 @@ export function recentChatters(messages: ChatMessage[], platform: Platform, chan
   return out
 }
 
+/**
+ * The chatters a typed "@prefix" could mean, best first: names that START with it (newest chatter first), then, once at
+ * least two characters are typed, names that merely CONTAIN it ("@leaf" finds "nightleaf"). Case does not matter.
+ * An empty prefix matches everyone, newest first.
+ */
+export function matchChatters(chatters: string[], prefix: string): string[] {
+  const p = prefix.toLowerCase()
+  const starts = chatters.filter((n) => n.toLowerCase().startsWith(p))
+  if (p.length < 2) return starts
+  const contains = chatters.filter((n) => !n.toLowerCase().startsWith(p) && n.toLowerCase().includes(p))
+  return [...starts, ...contains]
+}
+
+/** What the suggestion list should show for the text and cursor right now (undefined: no list). */
+export function mentionSuggestions(text: string, cursor: number, chatters: string[], limit = 6): { start: number; prefix: string; names: string[] } | undefined {
+  const at = mentionAt(text, cursor)
+  if (!at || !at.prefix) return undefined // nothing typed after the "@" yet
+  const names = matchChatters(chatters, at.prefix)
+  // A single suggestion that is already fully typed has nothing left to offer.
+  if (!names.length || (names.length === 1 && names[0].toLowerCase() === at.prefix.toLowerCase())) return undefined
+  return { start: at.start, prefix: at.prefix, names: names.slice(0, limit) }
+}
+
 /** The "@prefix" being typed right before the cursor, if any: where it starts and what has been typed after the "@". */
 export function mentionAt(text: string, cursor: number): { start: number; prefix: string } | undefined {
   const m = /(?<![\w@])@([A-Za-z0-9_]{0,25})$/.exec(text.slice(0, cursor))
@@ -114,7 +138,9 @@ export function completeMention(
   chatters: string[],
   session?: CompletionSession,
   backwards = false,
-  maxLength = 500
+  maxLength = 500,
+  /** Which match to insert first (the one highlighted in the suggestion list). */
+  startIndex = 0
 ): Completion | undefined {
   let start: number
   let matches: string[]
@@ -130,11 +156,10 @@ export function completeMention(
   } else {
     const at = mentionAt(text, cursor)
     if (!at) return undefined
-    const prefix = at.prefix.toLowerCase()
-    matches = chatters.filter((n) => n.toLowerCase().startsWith(prefix))
+    matches = matchChatters(chatters, at.prefix)
     if (!matches.length) return { text, cursor } // handled (so focus doesn't jump away), but nothing to insert
     start = at.start
-    index = backwards ? matches.length - 1 : 0
+    index = backwards ? matches.length - 1 : Math.min(Math.max(startIndex, 0), matches.length - 1)
     replaceLen = cursor - start
   }
 

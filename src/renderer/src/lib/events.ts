@@ -22,7 +22,8 @@ export const EVENT_META: Record<EventType, { label: string; color: string }> = {
   prediction: { label: 'Prediction', color: '#f472b6' },
   redemption: { label: 'Reward', color: '#2dd4bf' },
   moderation: { label: 'Mod', color: '#8d86a3' },
-  notice: { label: 'Notice', color: '#8d86a3' }
+  notice: { label: 'Notice', color: '#8d86a3' },
+  break: { label: 'Break', color: '#8d86a3' } // drawn by FeedBreak, not as an event card
 }
 
 /** What a removed message shows in place of its text until clicked. */

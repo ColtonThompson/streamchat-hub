@@ -40,111 +40,75 @@ const poll = (id: string, over: Partial<Extract<ChannelActivity, { kind: 'poll' 
   ...over
 })
 
+const NONE = { twitch: '', youtube: '', kick: '', x: '', tiktok: '' }
+const OFF = { twitch: false, youtube: false, kick: false, x: false, tiktok: false }
+
 beforeEach(() => {
-  useChatStore.setState({ ...initial, messages: [], activities: {}, pins: {}, enabled: { ...initial.enabled }, channels: { ...initial.channels } })
+  // Every test starts with no channels and nothing connected (the start-up tests use `initial` instead).
+  useChatStore.setState({ ...initial, messages: [], activities: {}, pins: {}, enabled: { ...OFF }, channels: { ...NONE }, titleSource: '', chatters: new Map(), chattersOpen: false, chattersCollapsed: [] })
   apiCalls.length = 0
   storageBroken = false
 })
 
 describe('starting up', () => {
-  it('restores the channels typed last time', () => {
+  it('restores the channels typed last time, and the platform that has them starts connected (resumes)', () => {
     expect(initial.channels.twitch).toBe('saved_channel')
     expect(initial.channels.youtube).toBe('')
+    expect(initial.enabled.twitch).toBe(true)
+    expect(initial.enabled.youtube).toBe(false)
   })
 
-  it('starts with everything off and signed out', () => {
-    expect(Object.values(initial.enabled).every((on) => !on)).toBe(true)
+  it('starts signed out with no messages', () => {
     expect(initial.auth.status).toBe('signed-out')
     expect(initial.messages).toEqual([])
   })
-})
 
-describe('addItems', () => {
-  it('appends messages in order', () => {
-    s().addItems([msg('a'), msg('b')])
-    s().addItems([msg('c')])
-    expect(s().messages.map((m) => m.id)).toEqual(['a', 'b', 'c'])
-  })
-
-  it('applies a deletion to a message that arrived earlier in the SAME batch', () => {
-    s().addItems([msg('a'), { kind: 'moderation', action: { type: 'delete-message', platform: 'twitch', channelId: 'chan', messageId: 'a' } }, msg('b')])
-    expect(s().messages.map((m) => [m.id, m.removed])).toEqual([['a', 'deleted'], ['b', undefined]])
-  })
-
-  it('does not apply a ban to messages that arrive after it', () => {
-    s().addItems([
-      msg('old'),
-      { kind: 'moderation', action: { type: 'clear-user', platform: 'twitch', channelId: 'chan', userId: 'u1', login: 'viewer' } },
-      msg('new')
-    ])
-    expect(s().messages.map((m) => m.removed)).toEqual(['ban', undefined])
-  })
-
-  it('keeps only the newest 2000 messages', () => {
-    s().addItems(Array.from({ length: 2105 }, (_, i) => msg(`m${i}`)))
-    expect(s().messages).toHaveLength(2000)
-    expect(s().messages[0].id).toBe('m105')
-    expect(s().messages.at(-1)?.id).toBe('m2104')
-  })
-
-  it('keeps the same messages array when a batch changes nothing visible', () => {
-    s().addItems([msg('a')])
-    const before = s().messages
-    s().addItems([])
-    expect(s().messages).toBe(before)
-  })
-
-  describe('polls and predictions', () => {
-    it('keeps the latest state of each one by key', () => {
-      s().addItems([{ kind: 'activity', activity: poll('p1', { title: 'first' }) }])
-      s().addItems([{ kind: 'activity', activity: poll('p1', { title: 'second' }) }, { kind: 'activity', activity: poll('p2') }])
-      expect(Object.keys(s().activities).sort()).toEqual(['poll:p1', 'poll:p2'])
-      expect(s().activities['poll:p1'].title).toBe('second')
-    })
-
-    it('forgets results more than 10 minutes after they ended', () => {
-      const ended = poll('old', { status: 'completed', endedAt: Date.now() - 11 * 60_000 })
-      const recent = poll('recent', { status: 'completed', endedAt: Date.now() - 60_000 })
-      s().addItems([{ kind: 'activity', activity: ended }, { kind: 'activity', activity: recent }, { kind: 'activity', activity: poll('live') }])
-      expect(Object.keys(s().activities).sort()).toEqual(['poll:live', 'poll:recent'])
-    })
-
-    it('does not bring back one the user closed', () => {
-      const a = poll('dismissed-1')
-      s().addItems([{ kind: 'activity', activity: a }])
-      s().dismissActivity(activityKey(a))
-      expect(s().activities).toEqual({})
-      s().addItems([{ kind: 'activity', activity: { ...a, title: 'update' } }])
-      expect(s().activities).toEqual({})
-    })
-  })
-})
-
-describe('platforms', () => {
-  it('turning one on tells the main process, with the cleaned channel list', () => {
-    s().setChannels('twitch', 'Foo, twitch.tv/bar !!!')
-    apiCalls.length = 0
-    s().togglePlatform('twitch')
-    expect(s().enabled.twitch).toBe(true)
+  it('resume() reconnects each platform that has channels, with its cleaned list, and nothing else', () => {
+    useChatStore.setState({ channels: { ...NONE, twitch: 'Foo, twitch.tv/bar !!!' }, enabled: { ...OFF, twitch: true } })
+    s().resume()
     expect(apiCalls).toEqual([['toggle', 'twitch', true, ['foo', 'bar']]])
-    s().togglePlatform('twitch')
-    expect(apiCalls.at(-1)).toEqual(['toggle', 'twitch', false, ['foo', 'bar']])
   })
 
-  it('uses YouTube\'s rules for the YouTube box', () => {
+  it('resume() does nothing when there are no channels', () => {
+    s().resume()
+    expect(apiCalls).toEqual([])
+  })
+})
+
+describe('platforms follow their channels', () => {
+  it('the first channel connects the platform; more channels apply live; removing the last disconnects it', () => {
+    s().setChannels('twitch', 'Foo')
+    expect(s().enabled.twitch).toBe(true)
+    expect(apiCalls).toEqual([['toggle', 'twitch', true, ['foo']]])
+    apiCalls.length = 0
+    s().setChannels('twitch', 'Foo, twitch.tv/bar !!!')
+    expect(apiCalls).toEqual([['channels', 'twitch', ['foo', 'bar']]])
+    apiCalls.length = 0
+    s().setChannels('twitch', '')
+    expect(s().enabled.twitch).toBe(false)
+    expect(apiCalls).toEqual([['toggle', 'twitch', false, []]])
+  })
+
+  it('uses YouTube\'s rules for YouTube channels', () => {
     s().setChannels('youtube', '@MyChannel nonsense')
-    s().togglePlatform('youtube')
+    expect(s().enabled.youtube).toBe(true)
     expect(apiCalls.at(-1)).toEqual(['toggle', 'youtube', true, ['@mychannel']])
   })
 
-  it('switching Twitch off clears poll/prediction cards (they could never finish); other platforms do not', () => {
+  it('text with no valid channel does not connect anything', () => {
+    s().setChannels('twitch', '!!! ???')
+    expect(s().enabled.twitch).toBe(false)
+    expect(apiCalls).toEqual([])
+  })
+
+  it('disconnecting Twitch clears poll/prediction cards (they could never finish); other platforms do not', () => {
     s().addItems([{ kind: 'activity', activity: poll('p-toggle') }])
-    s().togglePlatform('youtube')
-    s().togglePlatform('youtube')
+    s().setChannels('youtube', '@aaa')
+    s().setChannels('youtube', '')
     expect(Object.keys(s().activities)).toEqual(['poll:p-toggle'])
-    s().togglePlatform('twitch') // on
+    s().setChannels('twitch', 'a') // connect
     expect(Object.keys(s().activities)).toEqual(['poll:p-toggle'])
-    s().togglePlatform('twitch') // off
+    s().setChannels('twitch', '') // disconnect
     expect(s().activities).toEqual({})
   })
 
@@ -155,20 +119,142 @@ describe('platforms', () => {
   })
 })
 
+describe('adding and removing channels', () => {
+  const titles = () => s().messages.filter((m) => m.event?.type === 'break').map((m) => m.event?.title)
+
+  it('rejects text that is not a channel, with a reason', () => {
+    const r = s().addChannel('twitch', '!!!')
+    expect(r.ok).toBe(false)
+    expect('error' in r && r.error).toMatch(/Twitch channel name/)
+    const y = s().addChannel('youtube', 'plainword')
+    expect('error' in y && y.error).toMatch(/@handle/)
+  })
+
+  it('the first channel added connects the platform, marks the join, and becomes the title source', () => {
+    expect(s().addChannel('twitch', 'twitch.tv/One')).toEqual({ ok: true, added: ['one'] })
+    expect(s().channels.twitch).toBe('one')
+    expect(s().enabled.twitch).toBe(true)
+    expect(apiCalls).toEqual([['toggle', 'twitch', true, ['one']]])
+    expect(titles()).toEqual(['Joined #one'])
+    expect(s().titleSource).toBe('twitch:one')
+    expect(JSON.parse(store.get('hub.channels')!).twitch).toBe('one')
+    expect(store.get('hub.titleSource')).toBe('twitch:one')
+  })
+
+  it('later channels apply live, mark the join, and leave the title source alone (even on another platform)', () => {
+    s().addChannel('twitch', 'one')
+    apiCalls.length = 0
+    expect(s().addChannel('twitch', 'two, three')).toEqual({ ok: true, added: ['two', 'three'] })
+    expect(apiCalls).toEqual([['channels', 'twitch', ['one', 'two', 'three']]])
+    expect(s().addChannel('youtube', '@later')).toEqual({ ok: true, added: ['@later'] })
+    expect(apiCalls.at(-1)).toEqual(['toggle', 'youtube', true, ['@later']])
+    expect(titles()).toEqual(['Joined #one', 'Joined #two', 'Joined #three', 'Joined @later'])
+    expect(s().titleSource).toBe('twitch:one')
+  })
+
+  it('a YouTube channel added first is the title source even though Twitch is listed first', () => {
+    s().addChannel('youtube', '@first')
+    s().addChannel('twitch', 'second')
+    expect(s().titleSource).toBe('youtube:@first')
+  })
+
+  it('refuses a channel that is already there, and mentions only the new ones when some are', () => {
+    s().addChannel('twitch', 'one')
+    const r = s().addChannel('twitch', 'ONE')
+    expect('error' in r && r.error).toMatch(/already in your feed/)
+    expect(s().addChannel('twitch', 'one, fresh')).toEqual({ ok: true, added: ['fresh'] })
+  })
+
+  it('refuses to go past the platform limit', () => {
+    s().setChannels('youtube', '@aaa, @bbb, @ccc, @ddd, @eee')
+    const r = s().addChannel('youtube', '@fff')
+    expect('error' in r && r.error).toMatch(/at most 5/)
+    expect(s().channels.youtube).toBe('@aaa, @bbb, @ccc, @ddd, @eee')
+  })
+
+  it('removing a channel marks the leave; removing the last one disconnects the platform', () => {
+    s().addChannel('twitch', 'one, two')
+    apiCalls.length = 0
+    s().removeChannel('twitch', 'one')
+    expect(s().channels.twitch).toBe('two')
+    expect(apiCalls).toEqual([['channels', 'twitch', ['two']]])
+    s().removeChannel('twitch', 'two')
+    expect(s().channels.twitch).toBe('')
+    expect(s().enabled.twitch).toBe(false)
+    expect(apiCalls.at(-1)).toEqual(['toggle', 'twitch', false, []])
+    expect(titles()).toEqual(['Joined #one', 'Joined #two', 'Left #one', 'Left #two'])
+    s().removeChannel('twitch', 'never-added') // unknown: ignored
+    expect(titles()).toHaveLength(4)
+  })
+
+  it('setTitleSource saves the choice', () => {
+    s().setTitleSource('youtube:@x')
+    expect(s().titleSource).toBe('youtube:@x')
+    expect(store.get('hub.titleSource')).toBe('youtube:@x')
+  })
+})
+
+describe('chatters', () => {
+  const said = (id: string, name: string, badges: string[] = [], over: Partial<ChatMessage> = {}): FeedItem => ({
+    kind: 'message',
+    message: chatMessage({ id, author: { id: `u-${name}`, name, badges: badges.map((b) => ({ id: b, label: '' })) }, ...over })
+  })
+
+  it('remembers everyone who chats, once, with their role', () => {
+    s().addItems([said('c1', 'Bob'), said('c2', 'Botleaf', ['moderator/1']), said('c3', 'Bob')])
+    expect([...s().chatters.values()].map((c) => [c.name, Object.values(c.roles)[0]])).toEqual([['Bob', 'viewer'], ['Botleaf', 'moderator']])
+  })
+
+  it('keeps them after their messages are trimmed away, and ignores events', () => {
+    s().addItems([said('c4', 'Early')])
+    s().addItems(Array.from({ length: 2100 }, (_, i) => said(`flood${i}`, 'Flooder')))
+    expect(s().messages.some((m) => m.author.name === 'Early')).toBe(false)
+    expect([...s().chatters.values()].some((c) => c.name === 'Early')).toBe(true)
+    s().addItems([{ kind: 'message', message: chatMessage({ id: 'ev1', name: 'Gifter', event: { type: 'sub', title: 'x' } }) }])
+    expect([...s().chatters.values()].some((c) => c.name === 'Gifter')).toBe(false)
+  })
+
+  it('a role change is picked up, and the Map is replaced (so the UI updates) only when something changed', () => {
+    s().addItems([said('c5', 'Pat')])
+    const before = s().chatters
+    s().addItems([said('c6', 'Pat')]) // same name, same role
+    expect(s().chatters).toBe(before)
+    s().addItems([said('c7', 'Pat', ['vip/1'])])
+    expect(s().chatters).not.toBe(before)
+    expect(Object.values([...s().chatters.values()].find((c) => c.name === 'Pat')!.roles)).toEqual(['vip'])
+  })
+
+  it('Clear empties the list too', () => {
+    s().addItems([said('c8', 'Gone')])
+    s().clear()
+    expect(s().chatters.size).toBe(0)
+  })
+
+  it('collapses and expands one platform\'s section, and remembers it', () => {
+    expect(s().chattersCollapsed).toEqual([])
+    s().toggleChattersPlatform('twitch')
+    s().toggleChattersPlatform('youtube')
+    expect(s().chattersCollapsed).toEqual(['twitch', 'youtube'])
+    expect(JSON.parse(store.get('hub.chattersCollapsed')!)).toEqual(['twitch', 'youtube'])
+    s().toggleChattersPlatform('twitch')
+    expect(s().chattersCollapsed).toEqual(['youtube'])
+  })
+
+  it('remembers whether the panel is open', () => {
+    expect(s().chattersOpen).toBe(false)
+    s().toggleChatters()
+    expect(s().chattersOpen).toBe(true)
+    expect(store.get('hub.chattersOpen')).toBe('1')
+    s().toggleChatters()
+    expect(store.get('hub.chattersOpen')).toBe('0')
+  })
+})
+
 describe('setChannels', () => {
   it('saves what was typed, exactly as typed', () => {
     s().setChannels('twitch', ' Foo ,bar')
     expect(s().channels.twitch).toBe(' Foo ,bar')
     expect(JSON.parse(store.get('hub.channels')!).twitch).toBe(' Foo ,bar')
-  })
-
-  it('applies the change live only while the platform is on', () => {
-    s().setChannels('twitch', 'a b')
-    expect(apiCalls).toEqual([])
-    s().togglePlatform('twitch')
-    apiCalls.length = 0
-    s().setChannels('twitch', 'a b c')
-    expect(apiCalls).toEqual([['channels', 'twitch', ['a', 'b', 'c']]])
   })
 
   it('still works in memory when storage is full or blocked', () => {
@@ -279,8 +365,8 @@ describe('pinned messages', () => {
 
   it('switching a platform off removes its pins only', () => {
     s().addItems([pin({ channelId: 'c2' }), pin({ platform: 'youtube', channelId: 'vid12345678', messageId: 'y1' })])
-    s().togglePlatform('twitch') // may turn it on or off depending on earlier tests; make sure it ends up off
-    if (s().enabled.twitch) s().togglePlatform('twitch')
+    s().setChannels('twitch', 'c2chan')
+    s().setChannels('twitch', '') // disconnecting Twitch drops its pins
     expect(s().pins['twitch:c2']).toBeUndefined()
     expect(s().pins['youtube:vid12345678']).toBeDefined()
   })

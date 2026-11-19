@@ -1,30 +1,40 @@
 /**
  * renderer/src/lib/streaminfo.ts
  *
- * WHAT: Decides whether the stream-info bar (title + viewers) applies, and for which stream.
+ * WHAT: Decides which stream the title bar (title + category + viewers above the chat) follows.
  *
- * RULE: only when the setting is on AND exactly one stream is being read overall: one Twitch channel or one
- *   YouTube stream, with no other platform switched on. With several streams mixed into one feed, "the" title
- *   and viewer count would be ambiguous, so nothing is shown (and nothing is fetched).
+ * RULE: the bar always follows ONE stream, even when several channels are in the feed: the channel you added first,
+ *   unless you picked another one in the Channels menu (that choice is `titleSource`, a `channelKey`). If the chosen
+ *   channel has since been removed, it falls back to the first remaining one. Nothing is followed when the setting is
+ *   off or there are no channels. (Following one stream keeps the title and viewer polling light: each stream followed
+ *   is another request every few seconds.)
  */
 import { parseSources } from '../../../shared/channels'
-import { PLATFORMS, type Platform, type StreamInfoTarget } from '../../../shared/types'
+import type { Platform, StreamInfoTarget } from '../../../shared/types'
 
-export function streamInfoTarget(show: boolean, enabled: Record<Platform, boolean>, channels: Record<Platform, string>): StreamInfoTarget | null {
+/** One channel in the feed: a Twitch login, or a YouTube source (see shared/channels.ts). */
+export interface ChannelRef {
+  platform: 'twitch' | 'youtube'
+  source: string
+}
+
+/** The text a channel is remembered by, e.g. "twitch:nightleaf". */
+export const channelKey = (c: ChannelRef): string => `${c.platform}:${c.source}`
+
+/** Every channel in the feed, Twitch first, then YouTube, each platform in the order they were added. */
+export function allChannels(channels: Record<Platform, string>): ChannelRef[] {
+  return (['twitch', 'youtube'] as const).flatMap((platform) => parseSources(platform, channels[platform]).map((source) => ({ platform, source })))
+}
+
+/** The channel the title bar follows: the one chosen by `key`, else the first one. */
+export function primaryChannel(channels: Record<Platform, string>, key: string): ChannelRef | null {
+  const all = allChannels(channels)
+  return all.find((c) => channelKey(c) === key) ?? all[0] ?? null
+}
+
+export function streamInfoTarget(show: boolean, channels: Record<Platform, string>, key: string): StreamInfoTarget | null {
   if (!show) return null
-  let total = 0
-  let only: StreamInfoTarget | null = null
-  for (const p of PLATFORMS) {
-    if (!enabled[p]) continue
-    if (p === 'twitch' || p === 'youtube') {
-      const sources = parseSources(p, channels[p])
-      total += sources.length
-      if (sources.length === 1) only = { platform: p, source: sources[0] }
-    } else {
-      total += 1 // another platform's chat is mixed into the feed, so it is not "a single stream" any more
-    }
-  }
-  return total === 1 ? only : null
+  return primaryChannel(channels, key)
 }
 
 /** 1234 -> "1,234". */

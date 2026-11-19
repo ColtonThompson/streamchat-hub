@@ -28,6 +28,8 @@ import { THEMES } from '../lib/themes'
 import { timeStyleOf } from '../lib/time'
 import { useChatStore } from '../store/chatStore'
 import { useSettingsStore } from '../store/settingsStore'
+import { useAddChannelStore } from '../store/addChannelStore'
+import { FeedBreak } from './FeedBreak'
 import { MessageRow } from './MessageRow'
 
 export function ChatFeed() {
@@ -53,6 +55,7 @@ export function ChatFeed() {
   const isBlacklisted = useMemo(() => compileBlacklist(blacklist), [blacklist])
 
   const ref = useRef<VirtuosoHandle>(null)
+  const showAdd = useAddChannelStore((s) => s.show)
 
   // A small "120%" badge flashes whenever the size changes, so Ctrl+scroll and shortcuts give feedback.
   // (The first render is skipped: opening the app shouldn't flash it.)
@@ -171,7 +174,10 @@ export function ChatFeed() {
     ) : (
       <div className="empty">
         <p className="empty-title">No chat yet</p>
-        <p>Turn on a platform above to start reading its chat here.</p>
+        <p>Add a channel to start reading its chat here.</p>
+        <button className="add-channel" onClick={() => showAdd()}>
+          <span aria-hidden="true">+</span> Add channel
+        </button>
       </div>
     )
   }
@@ -182,7 +188,10 @@ export function ChatFeed() {
         ref={ref}
         data={rows}
         computeItemKey={(_, r) => r.msg.id} // stable keys let React reuse row components
-        itemContent={(_, r) => (
+        itemContent={(_, r) =>
+          r.msg.event?.type === 'break' ? (
+            <FeedBreak msg={r.msg} timeStyle={timeStyle} />
+          ) : (
           <MessageRow
             msg={r.msg}
             alt={r.alt}
@@ -191,7 +200,8 @@ export function ChatFeed() {
             themeBg={themeBg}
             me={me}
           />
-        )}
+          )
+        }
         scrollerRef={attachScroller}
         // Read the ref (not state) so the answer is never a render behind.
         followOutput={() => (followRef.current ? 'auto' : false)}

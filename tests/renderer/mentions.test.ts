@@ -6,7 +6,7 @@
 import { scenario } from '../helpers/scenario'
 
 await scenario('@mentions: highlighting, chatter list, Tab completion', async (check) => {
-  const { splitMentions, mentionAt, recentChatters, completeMention } = await import('../../src/renderer/src/lib/mentions')
+  const { splitMentions, mentionAt, recentChatters, completeMention, matchChatters, mentionSuggestions } = await import('../../src/renderer/src/lib/mentions')
 
   // ---- highlighting
   const show = (t: string) => splitMentions(t).map((p) => (p.kind === 'mention' ? `[${p.name}]` : p.value)).join('')
@@ -69,6 +69,21 @@ await scenario('@mentions: highlighting, chatter list, Tab completion', async (c
   check('moving the cursor away ends the cycle', moved === undefined, moved)
   // max length
   check('refuses to exceed the message limit', completeMention('x'.repeat(495) + ' @al', 499, ch)!.text === 'x'.repeat(495) + ' @al')
+  // ---- suggestions (the list above the box)
+  const names = ['Pixel', 'nightowl', 'NightLeaf', 'sleepynight', 'Bob']
+  check('matchChatters: starts-with first (order kept), then contains', matchChatters(names, 'night').join() === 'nightowl,NightLeaf,sleepynight', matchChatters(names, 'night'))
+  check('matchChatters: contains needs 2+ characters', matchChatters(names, 'n').join() === 'nightowl,NightLeaf')
+  check('matchChatters: case-insensitive; empty prefix = everyone', matchChatters(names, 'BOB').join() === 'Bob' && matchChatters(names, '').length === 5)
+  const s1 = mentionSuggestions('hi @Night', 9, names)!
+  check('suggestions for "@Night"', s1.start === 3 && s1.prefix === 'Night' && s1.names.join() === 'nightowl,NightLeaf,sleepynight', s1)
+  check('suggestions: none for a bare @, plain text, or no match', mentionSuggestions('@', 1, names) === undefined && mentionSuggestions('hi', 2, names) === undefined && mentionSuggestions('@zzz', 4, names) === undefined)
+  check('suggestions: hidden once the only match is fully typed', mentionSuggestions('@bob', 4, names) === undefined && mentionSuggestions('@bo', 3, names)!.names.join() === 'Bob')
+  check('suggestions: limit', mentionSuggestions('@n', 2, ['n1', 'n2', 'n3'], 2)!.names.length === 2)
+  const pick = completeMention('hi @Night', 9, names, undefined, false, 500, 1)!
+  check('Tab with the 2nd suggestion highlighted inserts it', pick.text === 'hi @NightLeaf ', pick)
+  check('startIndex beyond the list is clamped', completeMention('@bo', 3, names, undefined, false, 500, 9)!.text === '@Bob ')
+  check('Tab completes by a contained name too', completeMention('@leaf', 5, names)!.text === '@NightLeaf ')
+
   check('single match: Tab again re-inserts the same name (stable)', (() => { const a = completeMention('@bo', 3, ch)!; const b = completeMention(a.text, a.cursor, ch, a.session)!; return b.text === a.text })())
 
 })

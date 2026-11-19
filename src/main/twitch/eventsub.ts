@@ -25,7 +25,7 @@
  * WHY THE SOCKET IS INJECTED (`createSocket`): so the tests can run this against a fake Twitch.
  *
  * HOW IT FITS: MessageBus creates one when you are signed in with the polls permission, Twitch is on,
- *   and your own channel is in the Twitch box (bus.ts `syncActivity`). It forwards events to
+ *   and your own channel is in your feed (bus.ts `syncActivity`). It forwards events to
  *   twitch/activity.ts for parsing.
  */
 import type { ActionResult } from '../../shared/types'

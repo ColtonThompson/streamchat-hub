@@ -28,6 +28,9 @@ import {
   type Platform,
   type PlatformStatus
 } from '../../../shared/types'
+import { channelBreaks } from '../lib/channelbreaks'
+import { chatterKey, chatterUpdate, MAX_CHATTERS, type Chatter } from '../lib/chatters'
+import { allChannels, channelKey, type ChannelRef } from '../lib/streaminfo'
 import { applyModeration } from '../lib/moderation'
 
 /** The most messages kept in memory; older ones are dropped. Keeps the app fast in marathon streams. */
@@ -62,10 +65,18 @@ interface ChatState {
   /** Every row in the feed, oldest first (chat lines, events, notes). */
   messages: ChatMessage[]
   status: Record<Platform, PlatformStatus>
-  /** Which platforms are switched on (their top-bar chip is lit). */
+  /** Which platforms are connected. Not a switch: a platform is on exactly when it has at least one channel (see `setChannels`). */
   enabled: Record<Platform, boolean>
-  /** The raw text typed in each platform's channel box, e.g. "mychannel, friend". */
+  /** The channels of each platform as saved text (written by Add channel / removeChannel), e.g. "mychannel, friend". */
   channels: Record<Platform, string>
+  /** Which channel's title and viewer count the bar above the chat shows (`channelKey`), when several are read. */
+  titleSource: string
+  /** Everyone who has chatted this session, by `chatterKey` (see lib/chatters.ts). Kept apart from `messages` so it is not lost as old messages are trimmed. */
+  chatters: Map<string, Chatter>
+  /** Is the chatters list (ChattersPanel) open? Remembered between launches. */
+  chattersOpen: boolean
+  /** Platforms whose section in the chatters list is collapsed. Remembered between launches. */
+  chattersCollapsed: Platform[]
   alwaysOnTop: boolean
   auth: AuthState
   /** Live polls and predictions in your channel (see ActivityPanel), by `activityKey`. */
@@ -80,10 +91,23 @@ interface ChatState {
   /** Apply a batch from the main process: add new messages, apply deletions/timeouts, trim old ones. */
   addItems: (items: FeedItem[]) => void
   setStatus: (platform: Platform, status: PlatformStatus) => void
-  togglePlatform: (platform: Platform) => void
+  /** At startup: reconnect every platform that still has channels from the last session. */
+  resume: () => void
   setChannels: (platform: Platform, raw: string) => void
+  /**
+   * Join one or more channels (a Twitch name, or a YouTube @handle / stream link) from the "Add channel" window.
+   * Switches the platform on if it is off. `added` lists what was actually new; an error says why nothing was added.
+   */
+  addChannel: (platform: Platform, input: string) => { ok: true; added: string[] } | { ok: false; error: string }
+  /** Leave one channel (as `parseSources` writes it). */
+  removeChannel: (platform: Platform, source: string) => void
+  /** Choose which channel's title the bar above the chat follows (a `channelKey`). */
+  setTitleSource: (key: string) => void
   toggleAlwaysOnTop: () => void
   toggleEvents: () => void
+  toggleChatters: () => void
+  /** Collapse or expand one platform's section of the chatters list. */
+  toggleChattersPlatform: (platform: Platform) => void
   /** Close a poll/prediction card. It stays closed even if Twitch sends more updates for it. */
   dismissActivity: (key: string) => void
   /** Close a pinned-message bar until that channel pins something different. */
@@ -98,6 +122,43 @@ const record = <T,>(value: T) => Object.fromEntries(PLATFORMS.map((p) => [p, val
 
 /** localStorage key under which the typed channel names are saved between launches. */
 const CHANNELS_KEY = 'hub.channels'
+/** ...and the channel whose title is shown. */
+const TITLE_KEY = 'hub.titleSource'
+/** ...and whether the chatters list is open. */
+const CHATTERS_KEY = 'hub.chattersOpen'
+
+/** ...and which platforms' sections are collapsed. */
+const COLLAPSED_KEY = 'hub.chattersCollapsed'
+
+function loadChattersCollapsed(): Platform[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((p): p is Platform => PLATFORMS.includes(p)) : []
+  } catch {
+    return []
+  }
+}
+
+function loadChattersOpen(): boolean {
+  try {
+    return localStorage.getItem(CHATTERS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function loadTitleSource(): string {
+  try {
+    return localStorage.getItem(TITLE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** A platform is on exactly when it has channels to read. Only Twitch and YouTube have real adapters. */
+function platformsWithChannels(channels: Record<Platform, string>): Record<Platform, boolean> {
+  return Object.fromEntries(PLATFORMS.map((p) => [p, (p === 'twitch' || p === 'youtube') && parseSources(p, channels[p]).length > 0])) as Record<Platform, boolean>
+}
 
 function loadChannels(): Record<Platform, string> {
   const base = record('')
@@ -122,8 +183,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ---- initial state ----
   messages: [],
   status: record<PlatformStatus>({ state: 'disconnected' }),
-  enabled: record(false),
+  // Resuming last session: a platform with saved channels starts "on"; `resume()` (called once at startup) connects it.
+  enabled: platformsWithChannels(loadChannels()),
   channels: loadChannels(),
+  titleSource: loadTitleSource(),
+  chatters: new Map(),
+  chattersOpen: loadChattersOpen(),
+  chattersCollapsed: loadChattersCollapsed(),
   alwaysOnTop: false,
   auth: { status: 'signed-out', configured: true },
   activities: {},
@@ -137,6 +203,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       let messages = s.messages
       let activities = s.activities
       let pins = s.pins
+      let chatters = s.chatters
       let pending: ChatMessage[] = [] // new messages not yet appended
       // A message id is only ever shown once, whatever path it arrived by (a repeated notification, a reconnect
       // replaying history). Built on first use, because most batches have nothing to check.
@@ -153,6 +220,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (known.has(item.message.id)) continue
           known.add(item.message.id)
           pending.push(item.message)
+          // Remember who chatted, and their role (a new Map only when something changed, so React sees it).
+          const key = chatterKey(item.message)
+          const updated = chatterUpdate(chatters.get(key), item.message)
+          if (updated) {
+            if (chatters === s.chatters) chatters = new Map(chatters)
+            chatters.set(key, updated)
+          }
         } else if (item.kind === 'pin') {
           const key = pinKey(item.pin.platform, item.pin.channelId)
           if (!dismissedPins.has(`${key}|${item.pin.messageId}`)) pins = { ...pins, [key]: item.pin }
@@ -177,25 +251,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       if (activities !== s.activities) next.activities = pruneActivities(activities)
       if (pins !== s.pins) next.pins = pins
+      if (chatters !== s.chatters) {
+        // Forget the chatters seen first once there are too many (a Map keeps the order they were added in).
+        for (const key of chatters.keys()) {
+          if (chatters.size <= MAX_CHATTERS) break
+          chatters.delete(key)
+        }
+        next.chatters = chatters
+      }
       return next
     }),
 
   setStatus: (platform, status) => set((s) => ({ status: { ...s.status, [platform]: status } })),
 
-  togglePlatform: (platform) => {
-    const enabled = !get().enabled[platform]
-    set((s) => ({
-      enabled: { ...s.enabled, [platform]: enabled },
-      // Switching Twitch off stops poll updates, so an "active" card would never finish: clear them.
-      ...(platform === 'twitch' && !enabled ? { activities: {} } : {}),
-      // A platform that is switched off no longer reports its pins, so drop them.
-      ...(!enabled ? { pins: Object.fromEntries(Object.entries(s.pins).filter(([, p]) => p.platform !== platform)) } : {})
-    }))
-    // Tell the main process to connect/disconnect, passing the cleaned channel list.
-    void window.api.setPlatformEnabled(platform, enabled, parseSources(platform, get().channels[platform]))
+  resume: () => {
+    const { enabled, channels } = get()
+    for (const p of PLATFORMS) if (enabled[p]) void window.api.setPlatformEnabled(p, true, parseSources(p, channels[p]))
   },
 
   setChannels: (platform, raw) => {
+    const before = parseSources(platform, get().channels[platform])
+    const after = parseSources(platform, raw)
     const channels = { ...get().channels, [platform]: raw }
     set({ channels })
     try {
@@ -203,8 +279,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {
       /* storage unavailable: keep in memory only */
     }
-    // If already connected, apply the change live.
-    if (get().enabled[platform]) void window.api.setChannels(platform, parseSources(platform, raw))
+    // A platform is connected exactly while it has channels: the first one connects it, removing the last disconnects it.
+    const wasOn = get().enabled[platform]
+    const isOn = after.length > 0
+    if (isOn !== wasOn) {
+      set((s) => ({
+        enabled: { ...s.enabled, [platform]: isOn },
+        // Twitch stops reporting polls, and any platform its pins, once it is disconnected, so drop what would go stale.
+        ...(!isOn && platform === 'twitch' ? { activities: {} } : {}),
+        ...(!isOn ? { pins: Object.fromEntries(Object.entries(s.pins).filter(([, p]) => p.platform !== platform)) } : {})
+      }))
+      void window.api.setPlatformEnabled(platform, isOn, after)
+    } else if (isOn) {
+      void window.api.setChannels(platform, after) // already connected: apply the change live
+    }
+    // Mark in the feed where a chat joined or left (only a connected platform really joins or leaves).
+    if (wasOn || isOn) {
+      const breaks = channelBreaks(platform, before, after)
+      if (breaks.length) set((s) => ({ messages: s.messages.concat(breaks) }))
+    }
+  },
+
+  addChannel: (platform, input) => {
+    const wanted = parseSources(platform, input)
+    if (!wanted.length) {
+      return {
+        ok: false,
+        error:
+          platform === 'youtube'
+            ? 'That is not a YouTube @handle, stream link or video id. Handles need the @.'
+            : 'That is not a Twitch channel name. Use letters, numbers and underscores, or paste a twitch.tv link.'
+      }
+    }
+    const current = parseSources(platform, get().channels[platform])
+    const added = wanted.filter((c) => !current.includes(c))
+    if (!added.length) return { ok: false, error: wanted.length > 1 ? 'Those are already in your feed.' : 'That channel is already in your feed.' }
+    const next = [...current, ...added]
+    if (parseSources(platform, next.join(', ')).length < next.length) {
+      return { ok: false, error: `You can read at most ${platform === 'youtube' ? 5 : 20} ${platform === 'youtube' ? 'YouTube streams' : 'Twitch channels'} at once. Remove one first.` }
+    }
+    // The first channel you add is the one whose title is shown (you can pick another from the Channels menu).
+    if (!allChannels(get().channels).length) get().setTitleSource(channelKey({ platform: platform as ChannelRef['platform'], source: added[0] }))
+    get().setChannels(platform, next.join(', ')) // connects the platform if this is its first channel, and marks the join
+    return { ok: true, added }
+  },
+
+  removeChannel: (platform, source) => {
+    const current = parseSources(platform, get().channels[platform])
+    if (!current.includes(source)) return
+    get().setChannels(platform, current.filter((c) => c !== source).join(', '))
+  },
+
+  setTitleSource: (key) => {
+    set({ titleSource: key })
+    try {
+      localStorage.setItem(TITLE_KEY, key)
+    } catch {
+      /* storage unavailable: it just resets next launch */
+    }
   },
 
   toggleAlwaysOnTop: () => {
@@ -215,7 +347,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   toggleEvents: () => set((s) => ({ showEvents: !s.showEvents })),
 
-  clear: () => set({ messages: [] }),
+  toggleChatters: () => {
+    const chattersOpen = !get().chattersOpen
+    set({ chattersOpen })
+    try {
+      localStorage.setItem(CHATTERS_KEY, chattersOpen ? '1' : '0')
+    } catch {
+      /* storage unavailable: it just resets next launch */
+    }
+  },
+
+  toggleChattersPlatform: (platform) => {
+    const now = get().chattersCollapsed
+    const chattersCollapsed = now.includes(platform) ? now.filter((p) => p !== platform) : [...now, platform]
+    set({ chattersCollapsed })
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(chattersCollapsed))
+    } catch {
+      /* storage unavailable: it just resets next launch */
+    }
+  },
+
+  clear: () => set({ messages: [], chatters: new Map() }),
 
   dismissActivity: (key) => {
     dismissedActivities.add(key)

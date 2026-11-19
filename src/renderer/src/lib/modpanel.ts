@@ -9,6 +9,7 @@
  *   - what a hotkey press means                   `modKeyAction`
  */
 import type { AuthState, ChatMessage, Platform } from '../../../shared/types'
+import type { Chatter } from './chatters'
 
 /** Who the panel is about. `channelId` is where any action happens (moderation is per channel). */
 export interface ModTarget {
@@ -36,6 +37,17 @@ export function modTargetFor(msg: ChatMessage, auth: Pick<AuthState, 'canModerat
   // Yourself and the channel owner can't be banned, so those rows open a history-only panel.
   const readOnly = msg.author.id === auth.userId || msg.author.badges.some((b) => b.id.startsWith('broadcaster/'))
   return { platform: msg.platform, channelId: msg.channelId, userId: msg.author.id, name: msg.author.name, ...(readOnly ? { readOnly: true } : {}) }
+}
+
+/**
+ * The same panel opened from the chatters list (ChattersPanel.tsx): Twitch only, with moderation tools on, like a click on a
+ * chat line. It is for the channel their latest message was in, because a ban or timeout happens in one channel. Yourself
+ * and a channel's broadcaster open it history-only. Undefined when the person's id or channel is unknown, or on YouTube.
+ */
+export function modTargetForChatter(c: Chatter, auth: Pick<AuthState, 'canModerate' | 'userId'>): ModTarget | undefined {
+  if (!auth.canModerate || c.platform !== 'twitch' || !c.id || !c.last) return undefined
+  const readOnly = c.id === auth.userId || c.roles[`#${c.last}`] === 'broadcaster'
+  return { platform: 'twitch', channelId: c.last, userId: c.id, name: c.name, ...(readOnly ? { readOnly: true } : {}) }
 }
 
 /** That person's chat lines in this channel from this session, oldest first (removed ones included, marked). */

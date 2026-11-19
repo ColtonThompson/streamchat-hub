@@ -11,6 +11,25 @@ const NO_TERMS: string[] = []
 const filters = (over: Partial<FeedFilters> = {}): FeedFilters => ({ enabled: all, showEvents: true, blacklist: NO_TERMS, isBlacklisted: () => false, ...over })
 const memory = (blacklist: string[] = NO_TERMS) => ({ current: newShading(blacklist) })
 
+describe('buildRows: joined / left dividers', () => {
+  const divider = chatMessage({ id: 'brk', event: { type: 'break', title: 'Joined #x' } })
+
+  it('always shows, even with events off or a blacklist that matches everything', () => {
+    const rows = buildRows([chatMessage({ id: 'a' }), divider, chatMessage({ id: 'b' })], filters({ showEvents: false, isBlacklisted: (m) => m !== divider }), memory())
+    expect(rows.map((r) => r.msg.id)).toEqual(['brk'])
+  })
+
+  it('is hidden when its platform is switched off', () => {
+    const rows = buildRows([divider], filters({ enabled: { ...all, [divider.platform]: false } }), memory())
+    expect(rows).toEqual([])
+  })
+
+  it('does not flip the alternating shade', () => {
+    const rows = buildRows([chatMessage({ id: 'a' }), divider, chatMessage({ id: 'b' })], filters(), memory())
+    expect(rows.map((r) => r.alt)).toEqual([0, 0, 1])
+  })
+})
+
 describe('buildRows: what is shown', () => {
   it('lists messages in order', () => {
     const msgs = [chatMessage({ id: 'a' }), chatMessage({ id: 'b' })]

@@ -156,7 +156,7 @@ export function UserPanel() {
         </header>
 
         <ul ref={list} className="mp-list" aria-label={`Messages from ${target.name} this session`}>
-          {history.length === 0 && <li className="mp-empty">No messages from {target.name} yet in this session.</li>}
+          {history.length === 0 && <li className="mp-empty">No messages from {target.name} are in the chat right now (older ones are dropped to save memory, and Clear removes them).</li>}
           {history.map((m) => (
             <li key={m.id} className="mp-msg" data-removed={m.removed || undefined}>
               <time className="mp-time">{formatTime(m.timestamp, timeStyle)}</time>

@@ -90,7 +90,7 @@ src/
       main.tsx / App.tsx  UI entry and overall layout
       store/chatStore.ts  All UI state (Zustand): messages, platforms on/off, auth, toast...
       lib/                Small helpers: platform colours, event colours, moderation logic, @mentions
-      components/         PlatformBar, ChannelInput, ChatFeed, MessageRow,
+      components/         PlatformBar, AddChannelModal, FeedBreak, ChatFeed, MessageRow,
                           UserPanel (click a message: history + ban/timeout), Toast, Composer, ActivityPanel (poll/prediction cards),
                           UpdateBanner, settings/ (Appearance, Chat, Accounts, About tabs)
       styles.css          All styling (heavily commented; read its header)
@@ -137,7 +137,7 @@ Twitch EventSub ──WebSocket──> twitch/eventsub.ts   welcome -> subscribe
                        store.activities ──> ActivityPanel (cards above the feed)
 ```
 It runs only when ALL are true: you are signed in with the **polls & predictions** permission (Settings ->
-Accounts), Twitch is on, and **your own channel** is in the Twitch box. Twitch only gives a channel's
+Accounts), Twitch is on, and **your own channel** is in your feed (Add channel). Twitch only gives a channel's
 poll/prediction events to its own broadcaster, so this cannot show polls in someone else's channel.
 `MessageBus.syncActivity` (bus.ts) starts and stops the connection as those things change.
 
@@ -206,14 +206,17 @@ TypeScript will point out any step you forget.
 2. Convert incoming messages to `ChatMessage` and call `emit.message(...)`. Report connection state
    with `emit.status(...)`.
 3. Add a `case` for it in `adapters/index.ts`.
-That's it: the UI, shading, filtering and top-bar chip already work for any platform.
+That's it: the UI, shading and filtering already work for any platform. (Adding a platform to the Add channel window is a small change in `AddChannelModal.tsx` and `chatStore.ts`.)
 If it has deletes/bans, also call `emit.moderation(...)`.
 
 ### Change how @mentions look or complete
 Chips: `.mention` in `styles.css` (the `[data-me='true']` rule is the stronger look for mentions of you).
 What counts as a mention, and how Tab completion picks and cycles names: `renderer/src/lib/mentions.ts`
-(pure functions, so easy to test). `components/Composer.tsx` only wires the Tab key to it. Names are
-suggested newest chatter first, from the channel you're sending to.
+(pure functions, so easy to test). `components/Composer.tsx` shows the suggestion list and wires the keys to it:
+type `@` and part of a name and a list appears above the box; Tab fills in the highlighted name, Up/Down change
+the highlight, a click picks one, Esc hides the list. Names that start with what you typed come first, then names
+that merely contain it (from two characters on), newest chatter first, from the channel you're sending to.
+Style: `.mention-list` in `styles.css`.
 
 ### Show a YouTube chat item that isn't shown yet
 The terminal prints `[youtube] unhandled chat item "someRenderer" (ignored)` once per unknown kind.
@@ -294,21 +297,49 @@ A bar above the chat also speaks up when it matters: if you are reading your own
 permissions it says so, with **Allow**, **Details** and **Not now** (remembered). Which feature needs which permission is defined
 in `src/renderer/src/lib/permissions.ts`.
 
-### Channel checklist in the Twitch box
+### The top bar, and adding and removing channels
 
-The dropdown under **Twitch channels** is a checklist. Channels already in your feed are ticked at the top; below them are the live
-channels you follow (this part needs go-live alerts enabled in Settings -> Accounts), unticked, most viewers first. **Click a row to
-add that channel; click a ticked row to remove it.** The list stays open so you can tick several, and each click is saved straight
-away (the channel joins or leaves at once if Twitch is on). Without the go-live permission the list still shows the channels in the
-box so you can untick them.
+The bar has **Add channel** and **Channels** on the left; on the right, **Show events**, icon buttons for **Pin on top** and
+**Clear** (hover for what they do), and the **Settings** cogwheel in the top right corner (it shows a dot when an update is waiting).
 
-You can still type: typing filters the list, Up/Down moves through the rows, Enter ticks or unticks the highlighted row (plain Enter
-means "use what I typed"), Tab takes the top match and Esc closes it. The logic is in `src/renderer/src/lib/suggest.ts`.
+There are no per-platform switches. A platform connects as soon as it has a channel and disconnects when its last channel is
+removed, and the channels you had open last time are reconnected when the app starts. (Only Twitch and YouTube have real chat
+readers; the mock Kick / X / TikTok feeds are no longer reachable from the bar.)
+
+**Add channel** opens a window: pick the platform (Twitch or YouTube) and type the channel: a Twitch name or twitch.tv link, or a
+YouTube @handle, stream link or video id. Under the box it says what will be added, or why the text isn't accepted. Press Enter or
+**Add channel** and it joins your current feed at once. With Twitch selected and go-live alerts enabled (Settings -> Accounts), the
+channels you follow that are live are listed in the window too, most viewers first: click one to add it.
+
+**Channels** (with a count) opens the list of everything you are reading. Each row shows its connection status, a star that chooses
+whose title is shown above the chat (see below), and a bin that leaves the channel.
+
+Whenever a channel joins or leaves, a divider line is put in the chat ("Joined #name" / "Left #name", with the time) so you can see
+where the previous chat ends and the new one starts coming in. Dividers always show, even with "Show events" off. Code: the window is
+`components/AddChannelModal.tsx`, the list is `components/ChannelsMenu.tsx`, the icon buttons are `components/IconButton.tsx`; the
+store actions are `addChannel` / `removeChannel` / `resume` in `store/chatStore.ts`; the divider rows are made by `lib/channelbreaks.ts`
+and drawn by `components/FeedBreak.tsx`.
+
+## Chatters list
+
+The ellipsis button at the top right of the chat opens a panel on the right with everyone who has chatted: a section per platform, then
+per role (**Broadcaster**, **Moderator**, **VIP**, **Viewer**), names A to Z. The same button closes it, and it stays open or closed
+between launches. A line separates the platforms, and each platform's heading collapses or expands its section (also remembered). A person is listed once they have sent a message, because their role is read from the badges on it (Twitch:
+`broadcaster`, `moderator`, `lead_moderator`, `vip`; YouTube: `owner`, `moderator`). Roles are per channel, so someone who is a
+moderator in one channel and a viewer in another is listed under Moderator, and hovering the name shows the detail. Staff and admins
+show as viewers. With the moderation tools on, **clicking a Twitch name opens the same message-history panel as clicking one of their messages**
+(timeout / ban / unban, hotkeys), for the channel they last chatted in (the panel header names it); you and a channel's broadcaster open
+it history-only. Without the moderation permission, and on YouTube, names are plain text. If their older messages have been trimmed
+from the chat the panel says so. Platforms with no channels are hidden, and **Clear** empties the list. The list is kept separately from the chat
+lines, so it survives old messages being trimmed (up to 10,000 people). Code: `lib/chatters.ts` (roles and grouping),
+`components/ChattersPanel.tsx`, and `chatters` in `store/chatStore.ts`.
 
 ## Stream title and viewer count
 
-When you read exactly **one** stream (one Twitch channel, or one YouTube stream, with no other platform switched on), a bar above the
-chat shows whether it is live, its title, the category (Twitch) and how many are watching. Settings -> Chat -> **Show stream title and
+A bar above the chat shows whether one stream is live, its title, the category (Twitch) and how many are watching. It always follows
+**one** channel: the first one you added, or the one you pick with the star in the Channels menu. With several channels in the feed
+it names the channel the title belongs to. (Following every stream at once would mean one request per stream every few seconds.
+That is possible if you want it; it needs a change in `main/streaminfo.ts`.) Rule: `lib/streaminfo.ts`. Settings -> Chat -> **Show stream title and
 viewer count** turns it off; while it is off nothing is looked up. It refreshes every 45 seconds. Twitch needs you signed in
 (`GET /streams`, no extra permission). YouTube is read from the stream's web page, which YouTube can change without notice
 (`parseWatchStats` in `adapters/youtube/innertube.ts`).
@@ -319,8 +350,8 @@ viewer count** turns it off; while it is off nothing is looked up. It refreshes 
   the chat. Twitch has no push event for pins, so the app checks every 20 seconds; this needs the **moderation tools** permission
   and works in channels where you are the broadcaster or a moderator (other channels are skipped quietly).
 - **Reward redemptions** (Channel Points) show as "Reward" event rows, including the viewer's message. Twitch only sends them to
-  the broadcaster, so it is your own channel only: Settings -> Accounts -> **Enable reward redemptions**, put your channel in the
-  Twitch box and switch Twitch on.
+  the broadcaster, so it is your own channel only: Settings -> Accounts -> **Enable reward redemptions**, add your channel with
+  **Add channel** and make sure Twitch is on.
 - Poll, prediction and redemption rows are sent once per moment (their ids are fixed), and the chat list ignores a repeated message id.
   The terminal prints one `[activity]` line per event Twitch sends.
 
@@ -349,9 +380,9 @@ Tests use [Vitest](https://vitest.dev) and live in `tests/`, mirroring `src/`:
 
 | Folder | What is covered |
 |---|---|
-| `tests/shared` | what the channel boxes accept (Twitch names, YouTube links/handles) |
+| `tests/shared` | what the Add channel window accepts (Twitch names, YouTube links/handles) |
 | `tests/main` | Twitch chat connection (fake WebSocket), IRC + message parsing, sign-in and token refresh (fake Twitch), Twitch API client, polls/predictions + EventSub, go-live watcher, emotes, YouTube (fake YouTube), auto-update service |
-| `tests/renderer` | chat store, @mentions + Tab completion, channel suggestions, moderation, blacklist, row shading, timestamps, colours/contrast, themes, settings validation |
+| `tests/renderer` | chat store, @mentions + Tab completion, joined/left dividers, moderation, blacklist, chatters list (roles, grouping), row shading, timestamps, colours/contrast, themes, settings validation |
 
 Nothing touches the network or real files. `vitest.config.ts` swaps two packages for fakes from
 `tests/stubs/`: `electron` (desktop shell) and `ws` (WebSockets). Tests that need time to pass use
@@ -384,11 +415,11 @@ jsdom plus Testing Library), `main/index.ts` window wiring, and the real YouTube
 - **An image won't load?** The page's Content-Security-Policy (`renderer/index.html`) must allow its
   source. Emotes and badges come from `https:` hosts, which are allowed.
 - **No poll/prediction cards?** Check, in order: (1) Settings -> Accounts shows "Polls & predictions on"
-  (otherwise click Enable and approve in the browser), (2) Twitch is on and YOUR channel name is in the
-  Twitch box, (3) the feed shows "Watching your polls & predictions" (or a red-worded "unavailable" row saying
+  (otherwise click Enable and approve in the browser), (2) Twitch is on and YOUR channel is in your
+  feed (Add channel), (3) the feed shows "Watching your polls & predictions" (or a red-worded "unavailable" row saying
   why). The terminal has no extra logging; to see raw events, `console.log(type, event)` at the top of
   `parseActivityEvent`.
-- **YouTube chat not loading?** Read the chip's tooltip and the red text under the YouTube box: it says
+- **YouTube chat not loading?** Open the Channels menu (hover a row's dot) and read the red text next to the Add channel button: it says
   "waiting for @you to go live", "chat is turned off for this stream", "connection problem, retrying", etc.
   If YouTube changed its page, you'll see "unexpected layout": fix `parseChatPage` in
   `adapters/youtube/innertube.ts`. If chat loads but rows are missing or odd, see `parse.ts`.
