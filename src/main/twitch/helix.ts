@@ -224,6 +224,26 @@ export class Helix {
     return { title: String(s.title ?? ''), viewers: Number(s.viewer_count) || 0, game: String(s.game_name ?? '') }
   }
 
+  /**
+   * Several channels in ONE request (Twitch allows up to 100 `user_login`s). Returns the live ones keyed by lowercase
+   * login; a channel that is not in the map is offline. `undefined` when not signed in. Throws `HelixError` on failure.
+   */
+  async getStreams(logins: string[]): Promise<Map<string, { title: string; viewers: number; game: string }> | undefined> {
+    const out = new Map<string, { title: string; viewers: number; game: string }>()
+    for (let i = 0; i < logins.length; i += 100) {
+      const query = logins.slice(i, i + 100).map((l) => `user_login=${encodeURIComponent(l)}`).join('&')
+      const res = await this.request(`/streams?${query}&first=100`)
+      if (!res) return undefined
+      if (!res.ok) throw new HelixError(res.status, await this.describeFailure(res))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body: any = await res.json().catch(() => ({}))
+      for (const s of Array.isArray(body.data) ? body.data : []) {
+        if (s?.type === 'live') out.set(String(s.user_login ?? '').toLowerCase(), { title: String(s.title ?? ''), viewers: Number(s.viewer_count) || 0, game: String(s.game_name ?? '') })
+      }
+    }
+    return out
+  }
+
   // --------------------------------------------------------------------------- EventSub
 
   /**

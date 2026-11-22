@@ -334,15 +334,25 @@ from the chat the panel says so. Platforms with no channels are hidden, and **Cl
 lines, so it survives old messages being trimmed (up to 10,000 people). Code: `lib/chatters.ts` (roles and grouping),
 `components/ChattersPanel.tsx`, and `chatters` in `store/chatStore.ts`.
 
-## Stream title and viewer count
+## Stream title, live status and viewer count
 
-A bar above the chat shows whether one stream is live, its title, the category (Twitch) and how many are watching. It always follows
-**one** channel: the first one you added, or the one you pick with the star in the Channels menu. With several channels in the feed
-it names the channel the title belongs to. (Following every stream at once would mean one request per stream every few seconds.
-That is possible if you want it; it needs a change in `main/streaminfo.ts`.) Rule: `lib/streaminfo.ts`. Settings -> Chat -> **Show stream title and
-viewer count** turns it off; while it is off nothing is looked up. It refreshes every 45 seconds. Twitch needs you signed in
-(`GET /streams`, no extra permission). YouTube is read from the stream's web page, which YouTube can change without notice
-(`parseWatchStats` in `adapters/youtube/innertube.ts`).
+A bar above the chat shows whether one stream is live, its title, the category (Twitch) and how many are watching. It follows **one**
+channel: the first one you added, or the one you pick with the star in the Channels menu (rule: `lib/streaminfo.ts`). Settings ->
+Chat -> **Show stream title and viewer count** only hides the bar.
+
+**Every** channel in the feed is checked, though, so a channel you already have open is noticed when it changes:
+
+- The Channels menu shows **LIVE** / offline next to each channel.
+- When a channel goes live, goes offline or changes its title, a line appears in the chat ("#nightleaf went live: ...", "... went offline",
+  "... changed the title: ..."). Joining a channel that is already live says nothing, and the very first check is only a baseline.
+- Checks run every 30 seconds, immediately when you join a channel, when the window gets focus again, and when you sign in or out.
+  Twitch is one request for all Twitch channels (`GET /streams`, no extra permission, you must be signed in); YouTube is read from each
+  stream's web page, which YouTube can change without notice (`parseWatchStats` in `adapters/youtube/innertube.ts`).
+- If checks keep failing (two in a row: network down, Twitch refusing the sign-in, YouTube changing its page) the last info stays but the bar says
+  **not updating** (hover for the reason) instead of silently showing old data. The desktop go-live *notifications* are separate
+  (Settings, followed channels only; see `main/livewatch.ts`).
+
+Code: `main/streaminfo.ts` (the checking), `lib/streaminfo.ts` (`streamChanges`), `store/streamInfoStore.ts`.
 
 ## Pinned messages and reward redemptions
 
@@ -419,6 +429,9 @@ jsdom plus Testing Library), `main/index.ts` window wiring, and the real YouTube
   feed (Add channel), (3) the feed shows "Watching your polls & predictions" (or a red-worded "unavailable" row saying
   why). The terminal has no extra logging; to see raw events, `console.log(type, event)` at the top of
   `parseActivityEvent`.
+- **"Error: Electron uninstall" when starting?** The Electron program was not downloaded (npm skipped its install script).
+  `scripts/ensure-electron.mjs` downloads it, and runs after `npm install` / `npm ci` and before `npm run dev` (see the
+  `postinstall` and `predev` entries in package.json). To run it by hand: `node scripts/ensure-electron.mjs`.
 - **YouTube chat not loading?** Open the Channels menu (hover a row's dot) and read the red text next to the Add channel button: it says
   "waiting for @you to go live", "chat is turned off for this stream", "connection problem, retrying", etc.
   If YouTube changed its page, you'll see "unexpected layout": fix `parseChatPage` in

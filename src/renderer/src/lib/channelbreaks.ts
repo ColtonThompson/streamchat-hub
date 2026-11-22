@@ -33,6 +33,21 @@ export function makeBreak(platform: Platform, source: string, kind: 'joined' | '
   }
 }
 
+/** A divider for a stream going live / offline or changing its title (see lib/streaminfo.ts `streamChanges`). */
+export function makeStreamNote(platform: Platform, source: string, kind: 'live' | 'offline' | 'title', title?: string, now = Date.now()): ChatMessage {
+  const where = sourceLabel(platform, source)
+  const text = kind === 'live' ? `${where} went live${title ? `: ${title}` : ''}` : kind === 'offline' ? `${where} went offline` : `${where} changed the title: ${title ?? ''}`
+  return {
+    id: `break:${now}:${counter++}`,
+    platform,
+    channelId: source,
+    author: { name: '', badges: [] },
+    parts: [],
+    timestamp: now,
+    event: { type: 'break', title: text }
+  }
+}
+
 /** The dividers for a change from one channel list to another: "left" for each one dropped, then "joined" for each new one. */
 export function channelBreaks(platform: Platform, before: string[], after: string[], now = Date.now()): ChatMessage[] {
   const had = new Set(before)
@@ -42,6 +57,9 @@ export function channelBreaks(platform: Platform, before: string[], after: strin
     ...after.filter((c) => !had.has(c)).map((c) => makeBreak(platform, c, 'joined', now))
   ]
 }
+
+/** Does this divider mean something ended (left a channel, stream went offline)? Drawn in a quieter colour. */
+export const isEndBreak = (title: string): boolean => title.startsWith('Left ') || title.endsWith(' went offline')
 
 /** Is this row a divider? */
 export const isBreak = (msg: ChatMessage): boolean => msg.event?.type === 'break'

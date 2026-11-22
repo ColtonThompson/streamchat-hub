@@ -148,12 +148,15 @@ function createWindow(): void {
     if (should && !liveWatch.active) liveWatch.start()
     if (!should && liveWatch.active) liveWatch.stop()
   }
-  const offLiveAuth = twitchAuth.onChange(syncLiveWatch)
+  const offLiveAuth = twitchAuth.onChange(() => {
+    syncLiveWatch()
+    void streamInfo.refresh() // signed in or out: the Twitch answers change, so look again now
+  })
 
   // --- title and viewer count of the single stream being read (only while the UI asks for it) ---
   const streamInfo = new StreamInfoWatcher({
-    fetch: makeInfoFetcher({ twitchStream: (login) => followHelix.getStream(login), youtubeStats: fetchStreamStats }),
-    onInfo: (info) => !win.isDestroyed() && win.webContents.send(IPC.streamInfoChanged, info)
+    fetch: makeInfoFetcher({ twitchStreams: (logins) => followHelix.getStreams(logins), youtubeStats: fetchStreamStats }),
+    onInfo: (infos) => !win.isDestroyed() && win.webContents.send(IPC.streamInfoChanged, infos)
   })
 
   // --- app updates (only active in an installed build; in `npm run dev` it is switched off) ---
@@ -204,11 +207,17 @@ function createWindow(): void {
   handle(IPC.updatesCheck, () => updates.check())
   handle(IPC.updatesInstall, () => updates.install())
 
-  handle(IPC.streamInfoWatch, (_e, target: StreamInfoTarget | null) => {
-    // From the UI, so check it: one platform we know, and a source that is plain channel text.
-    const ok = !!target && (target.platform === 'twitch' || target.platform === 'youtube') && typeof target.source === 'string' && /^[@A-Za-z0-9_.-]{1,40}$/.test(target.source)
-    streamInfo.watch(ok ? { platform: target.platform, source: target.source } : null)
+  handle(IPC.streamInfoWatch, (_e, targets: StreamInfoTarget[]) => {
+    // From the UI, so check every entry: a platform we know, and a source that is plain channel text. At most 30 channels.
+    const list = Array.isArray(targets) ? targets : []
+    streamInfo.watch(
+      list
+        .filter((t) => !!t && (t.platform === 'twitch' || t.platform === 'youtube') && typeof t.source === 'string' && /^[@A-Za-z0-9_.-]{1,40}$/.test(t.source))
+        .slice(0, 30)
+        .map((t) => ({ platform: t.platform, source: t.source }))
+    )
   })
+  handle(IPC.streamInfoRefresh, () => streamInfo.refresh())
   handle(IPC.liveGet, () => liveList)
   handle(IPC.alertsTest, () => showNotification('StreamChat Hub', 'Go-live alerts will look like this.'))
   handle(IPC.liveAlerts, (_e, value: boolean) => {
@@ -259,6 +268,7 @@ function createWindow(): void {
       IPC.alertsTest,
       IPC.liveGet,
       IPC.streamInfoWatch,
+      IPC.streamInfoRefresh,
       IPC.onTop,
       IPC.windowTheme
     ]

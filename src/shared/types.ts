@@ -390,6 +390,8 @@ export interface StreamInfo extends StreamInfoTarget {
   game?: string
   /** A short explanation shown instead of details (e.g. "Sign in to Twitch to see this"). */
   note?: string
+  /** The last few checks failed, so these numbers may be out of date (`note` says why). */
+  stale?: boolean
 }
 
 export interface HubApi {
@@ -403,10 +405,12 @@ export interface HubApi {
   setAlwaysOnTop(value: boolean): Promise<void>
   /** Turn desktop notifications for followed channels going live on or off. */
   setLiveAlerts(value: boolean): Promise<void>
-  /** Which stream's title and viewer count to follow: one stream, or `null` for none (nothing is fetched then). */
+  /** Live / offline, title and viewers of the channels in the feed. `watch` takes ALL of them (an empty list stops fetching). */
   streamInfo: {
-    watch(target: StreamInfoTarget | null): Promise<void>
-    onChange(cb: (info: StreamInfo | null) => void): () => void
+    watch(targets: StreamInfoTarget[]): Promise<void>
+    /** Check right now instead of waiting for the next round (window focus, signing in...). */
+    refresh(): Promise<void>
+    onChange(cb: (infos: StreamInfo[]) => void): () => void
   }
   /** The emotes to offer in the picker for a channel, in sections (empty sections are left out). */
   emotes: {
@@ -458,6 +462,7 @@ export const IPC = {
   liveChanged: 'follows:live-changed',
   windowTheme: 'window:theme',
   streamInfoWatch: 'streaminfo:watch',
+  streamInfoRefresh: 'streaminfo:refresh',
   streamInfoChanged: 'streaminfo:changed',
   emotesList: 'emotes:list',
   zoomKey: 'chat:zoom-key',

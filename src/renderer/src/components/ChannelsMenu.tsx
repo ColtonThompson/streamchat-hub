@@ -2,16 +2,17 @@
  * renderer/src/components/ChannelsMenu.tsx   (the "Channels" button and its list)
  *
  * WHAT: One button in the top bar, "Channels" with a count, that opens a list of every channel in your feed. Each row
- * shows its connection status, and has two buttons: a star to choose whose title and viewer count the bar above the chat
+ * shows its connection status and whether the stream is live right now, and has two buttons: a star to choose whose title and viewer count the bar above the chat
  * shows (see lib/streaminfo.ts), and a bin to leave the channel (a "Left ..." divider is added to the chat). Esc or a
  * click outside closes the list. Adding is done with the separate "Add channel" button.
  */
 import { useEffect, useRef, useState } from 'react'
 import { sourceLabel } from '../lib/channelbreaks'
 import { PLATFORM_META } from '../lib/platforms'
-import { allChannels, channelKey, primaryChannel } from '../lib/streaminfo'
+import { allChannels, channelKey, infoFor, primaryChannel } from '../lib/streaminfo'
 import { useAddChannelStore } from '../store/addChannelStore'
 import { useChatStore } from '../store/chatStore'
+import { useStreamInfoStore } from '../store/streamInfoStore'
 
 export function ChannelsMenu() {
   const channels = useChatStore((s) => s.channels)
@@ -20,6 +21,7 @@ export function ChannelsMenu() {
   const setTitleSource = useChatStore((s) => s.setTitleSource)
   const removeChannel = useChatStore((s) => s.removeChannel)
   const showAdd = useAddChannelStore((s) => s.show)
+  const infos = useStreamInfoStore((s) => s.infos)
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
 
@@ -63,6 +65,7 @@ export function ChannelsMenu() {
             {list.map((c) => {
               const st = status[c.platform]
               const label = sourceLabel(c.platform, c.source)
+              const info = infoFor(infos, c)
               const isTitle = !!primary && channelKey(primary) === channelKey(c)
               return (
                 <li key={channelKey(c)} className="channels-row" style={{ ['--accent' as string]: PLATFORM_META[c.platform].color }}>
@@ -70,6 +73,11 @@ export function ChannelsMenu() {
                   <span className="channels-name" title={label}>
                     {label}
                   </span>
+                  {info && !info.stale && !info.note && (
+                    <span className="channels-live" data-live={info.live} title={info.live ? `${info.title ?? 'Live'}${info.viewers !== undefined ? ` (${info.viewers.toLocaleString('en-US')} watching)` : ''}` : 'Offline'}>
+                      {info.live ? 'LIVE' : 'offline'}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="channels-act"

@@ -2,8 +2,8 @@
  * tests/renderer/streaminfo.test.ts: when the title/viewers bar applies, and for which stream.
  */
 import { describe, expect, it } from 'vitest'
-import { allChannels, channelKey, formatViewers, primaryChannel, streamInfoTarget } from '../../src/renderer/src/lib/streaminfo'
-import type { Platform } from '../../src/shared/types'
+import { allChannels, channelKey, formatViewers, infoFor, primaryChannel, streamChanges, streamInfoTarget, watchTargets } from '../../src/renderer/src/lib/streaminfo'
+import type { Platform, StreamInfo } from '../../src/shared/types'
 
 const text = { twitch: '', youtube: '', kick: '', x: '', tiktok: '' } as Record<Platform, string>
 const ch = (over: Partial<Record<Platform, string>>) => ({ ...text, ...over })
@@ -53,5 +53,36 @@ describe('formatViewers', () => {
   it('adds thousands separators', () => {
     expect(formatViewers(1234567)).toBe('1,234,567')
     expect(formatViewers(0)).toBe('0')
+  })
+})
+
+describe('watchTargets / infoFor', () => {
+  it('every channel is watched, not only the one in the bar', () => {
+    expect(watchTargets(ch({ twitch: 'a, b', youtube: '@yyy' })).map(channelKey)).toEqual(['twitch:a', 'twitch:b', 'youtube:@yyy'])
+    expect(watchTargets(text)).toEqual([])
+  })
+  it('finds the info of one channel', () => {
+    const i: StreamInfo = { platform: 'twitch', source: 'a', live: true }
+    expect(infoFor([i], { platform: 'twitch', source: 'a' })).toBe(i)
+    expect(infoFor([i], { platform: 'youtube', source: 'a' })).toBeUndefined()
+  })
+})
+
+describe('streamChanges', () => {
+  const s = (over: Partial<StreamInfo>): StreamInfo => ({ platform: 'twitch', source: 'a', live: false, ...over })
+  it('offline -> live is "live", live -> offline is "offline"', () => {
+    expect(streamChanges([s({})], [s({ live: true, title: 'Hi' })]).map((c) => c.kind)).toEqual(['live'])
+    expect(streamChanges([s({ live: true, title: 'Hi' })], [s({})]).map((c) => c.kind)).toEqual(['offline'])
+  })
+  it('a new title while live is "title"; the same title or viewers moving is nothing', () => {
+    expect(streamChanges([s({ live: true, title: 'A' })], [s({ live: true, title: 'B' })]).map((c) => c.kind)).toEqual(['title'])
+    expect(streamChanges([s({ live: true, title: 'A', viewers: 1 })], [s({ live: true, title: 'A', viewers: 9 })])).toEqual([])
+  })
+  it('the first sighting is only a baseline', () => {
+    expect(streamChanges([], [s({ live: true, title: 'A' })])).toEqual([])
+  })
+  it('stale or unreadable answers never count', () => {
+    expect(streamChanges([s({ live: true, title: 'A' })], [s({ live: false, stale: true, note: 'Not updating: x' })])).toEqual([])
+    expect(streamChanges([s({ live: false, note: 'Sign in' })], [s({ live: true, title: 'A' })])).toEqual([])
   })
 })

@@ -189,8 +189,8 @@ export function ChatTab() {
         </label>
         <p className="setting-help">
           Appears above the chat for one channel: the first one you added, or the one you pick with the star in the Channels menu.
-          Turn it off if you would rather not see viewer counts; nothing is looked up while it is off. Twitch needs you to be
-          signed in.
+          Turn it off if you would rather not see the bar. Live status of every channel is still checked (it feeds the Channels
+          menu and the "went live" notes in the chat). Twitch needs you to be signed in.
         </p>
       </section>
 

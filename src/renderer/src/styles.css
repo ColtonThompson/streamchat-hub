@@ -337,6 +337,9 @@ body {
 .channels-dot[data-state='connected'] { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .channels-dot[data-state='connecting'] { background: var(--accent); animation: pulse 1s infinite; }
 .channels-dot[data-state='error'] { background: #ff5a5f; }
+.channels-live { flex: none; font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.channels-live[data-live='true'] { color: #ff5a5f; }
+.streaminfo-stale { flex: none; font-size: 11px; font-weight: 600; color: var(--danger-text); }
 .channels-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .channels-act {
   flex: none; display: grid; place-items: center; width: 26px; height: 26px; font: inherit; font-size: 15px; line-height: 1;

@@ -69,9 +69,10 @@ const api: HubApi = {
 
   // ---- title and viewers of the one stream being read ---------------------------------------
   streamInfo: {
-    watch: (target) => ipcRenderer.invoke(IPC.streamInfoWatch, target),
+    watch: (targets) => ipcRenderer.invoke(IPC.streamInfoWatch, targets),
+    refresh: () => ipcRenderer.invoke(IPC.streamInfoRefresh),
     onChange(cb) {
-      const handler = (_e: unknown, info: Parameters<typeof cb>[0]) => cb(info)
+      const handler = (_e: unknown, infos: Parameters<typeof cb>[0]) => cb(infos)
       ipcRenderer.on(IPC.streamInfoChanged, handler)
       return () => ipcRenderer.removeListener(IPC.streamInfoChanged, handler)
     }

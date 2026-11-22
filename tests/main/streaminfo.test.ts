@@ -18,88 +18,116 @@ await scenario('Stream info (title and viewers)', async (check) => {
 
   // ================================================================== watcher
   {
-    const out: (Info | null)[] = []
+    const out: Info[][] = []
     let viewers = 10
     let fail = false
-    const calls: string[] = []
+    let rounds = 0
+    const seen: string[][] = []
     const w = new StreamInfoWatcher({
-      fetch: async (t) => {
-        calls.push(t.source)
-        if (fail) throw new Error('network')
-        return { ...t, live: true, title: `T-${t.source}`, viewers }
+      fetch: async (ts) => {
+        rounds++
+        seen.push(ts.map((t) => t.source))
+        if (fail) return ts.map(() => new Error('network down'))
+        return ts.map((t) => ({ ...t, live: true, title: `T-${t.source}`, viewers }))
       },
       onInfo: (i) => out.push(i),
       intervalMs: 30
     })
-    w.watch(tw('a'))
+    w.watch([tw('a'), tw('b')])
     await wait(10)
-    check('fetches right away and reports it', out.at(-1)?.viewers === 10 && out.at(-1)?.title === 'T-a', out)
+    check('checks every channel right away', out.at(-1)?.length === 2 && out.at(-1)?.[1].title === 'T-b' && seen[0].join() === 'a,b', out)
     await wait(70)
-    const n = out.length
-    check('an unchanged result is not reported again', out.length === n && calls.length >= 3 && out.filter((x) => x !== null).length === 1, { out: out.length, calls: calls.length })
+    check('unchanged results are not reported again', out.length === 1 && rounds >= 3, { out: out.length, rounds })
     viewers = 25
     await wait(50)
-    check('a changed viewer count is reported', out.at(-1)?.viewers === 25)
+    check('a changed viewer count is reported', out.at(-1)?.[0].viewers === 25)
     fail = true
-    await wait(50)
-    check('a failing fetch keeps the last info (nothing reported)', out.at(-1)?.viewers === 25)
+    await wait(25)
+    check('one failed round keeps the last info untouched', out.at(-1)?.[0].viewers === 25 && !out.at(-1)?.[0].stale, out.at(-1))
+    await wait(60)
+    check('repeated failures mark it stale with the reason', out.at(-1)?.[0].stale === true && /network down/.test(out.at(-1)?.[0].note ?? '') && out.at(-1)?.[0].viewers === 25, out.at(-1))
     fail = false
-    w.watch(tw('b'))
-    check('switching streams clears the old info at once', out.at(-1) === null)
-    await wait(10)
-    check('...then shows the new stream', out.at(-1)?.source === 'b' && out.at(-1)?.title === 'T-b')
-    const calls0 = calls.length
-    w.watch(tw('b'))
+    await wait(50)
+    check('and it recovers on the next good check', out.at(-1)?.[0].stale === undefined && out.at(-1)?.[0].viewers === 25, out.at(-1))
+    w.watch([tw('b')])
+    check('a removed channel disappears at once', out.at(-1)?.length === 1 && out.at(-1)?.[0].source === 'b', out.at(-1))
+    const r0 = rounds
+    w.watch([tw('b')])
     await wait(5)
-    check('watching the same stream again does nothing', calls.length === calls0)
-    w.watch(null)
-    check('no target: info cleared', out.at(-1) === null && w.current === null)
-    const c1 = calls.length
+    check('watching the same list again does nothing', rounds === r0)
+    w.watch([])
+    check('no channels: cleared', out.at(-1)?.length === 0 && w.current.length === 0)
+    const r1 = rounds
     await wait(90)
-    check('...and nothing is fetched any more', calls.length === c1)
+    check('...and nothing is fetched any more', rounds === r1)
     w.stop()
   }
   {
-    // A slow answer for the PREVIOUS stream must not show up on the new one.
-    const out: (Info | null)[] = []
-    let release: (() => void) | undefined
+    // refresh() looks again right now; a slow reply for an OLD list is ignored.
+    const out: Info[][] = []
+    let n = 0
     const w = new StreamInfoWatcher({
-      fetch: async (t) => {
-        if (t.source === 'slow') await new Promise<void>((r) => (release = r))
-        return { ...t, live: true, title: t.source }
+      fetch: async (ts) => {
+        n++
+        return ts.map((t) => ({ ...t, live: n > 1, title: `round ${n}` }))
       },
       onInfo: (i) => out.push(i),
       intervalMs: 10_000
     })
-    w.watch(tw('slow'))
-    w.watch(tw('fast'))
+    w.watch([tw('x')])
+    await wait(10)
+    check('first check: offline baseline', out.at(-1)?.[0].live === false)
+    await w.refresh()
+    check('refresh() checks right now (went live)', out.at(-1)?.[0].live === true && n === 2, out.at(-1))
+    w.stop()
+    let release: (() => void) | undefined
+    const out2: Info[][] = []
+    const w2 = new StreamInfoWatcher({
+      fetch: async (ts) => {
+        if (ts[0].source === 'slow') await new Promise<void>((r) => (release = r))
+        return ts.map((t) => ({ ...t, live: true, title: t.source }))
+      },
+      onInfo: (i) => out2.push(i),
+      intervalMs: 10_000
+    })
+    w2.watch([tw('slow')])
+    w2.watch([tw('fast')])
     await wait(10)
     release?.()
     await wait(10)
-    check('a late reply for an old stream is ignored', out.filter((x) => x).map((x) => x!.source).join() === 'fast', out)
-    w.stop()
+    check('a late reply for an old list is ignored, the new list is still checked', out2.flat().map((x) => x.source).join() === 'fast', out2)
+    w2.stop()
   }
 
   // ================================================================== fetcher
   {
-    let twitch: unknown = { title: 'Speedrun!', viewers: 1234, game: 'Zelda' }
+    let twitch: Map<string, { title: string; viewers: number; game: string }> | undefined = new Map([['x', { title: 'Speedrun!', viewers: 1234, game: 'Zelda' }]])
+    let calls = 0
     const f = makeInfoFetcher({
-      twitchStream: async () => twitch as never,
-      youtubeStats: async (s) => (s === 'off' ? { live: false, title: 'Old stream' } : { live: true, title: 'Live now', viewers: 55 })
+      twitchStreams: async () => {
+        calls++
+        return twitch
+      },
+      youtubeStats: async (s) => {
+        if (s === 'boom') throw new Error('HTTP 429')
+        return s === 'off' ? { live: false, title: 'Old stream' } : { live: true, title: 'Live now', viewers: 55 }
+      }
     })
-    const live = await f(tw('x'))
-    check('Twitch live -> title, viewers, category', live?.live === true && live.title === 'Speedrun!' && live.viewers === 1234 && live.game === 'Zelda', live)
-    twitch = null
-    check('Twitch offline -> not live, no numbers', JSON.stringify(await f(tw('x'))) === JSON.stringify({ platform: 'twitch', source: 'x', live: false }))
+    const [live, other] = (await f([tw('x'), tw('y')])) as Info[]
+    check('Twitch live -> title, viewers, category', live.live === true && live.title === 'Speedrun!' && live.viewers === 1234 && live.game === 'Zelda', live)
+    check('...a channel not in the answer is offline, from ONE request', JSON.stringify(other) === JSON.stringify({ platform: 'twitch', source: 'y', live: false }) && calls === 1, other)
     twitch = undefined
-    const signedOut = await f(tw('x'))
-    check('Twitch while signed out -> an explanation', signedOut?.live === false && /sign in/i.test(signedOut.note ?? ''), signedOut)
-    twitch = { title: 'T', viewers: 1, game: '' }
-    check('empty category is left out', (await f(tw('x')))?.game === undefined)
-    const yt = await f({ platform: 'youtube', source: '@a123' })
-    check('YouTube live -> title + viewers', yt?.live === true && yt.title === 'Live now' && yt.viewers === 55)
-    const ytOff = await f({ platform: 'youtube', source: 'off' })
-    check('YouTube offline -> no title, no viewers', ytOff?.live === false && ytOff.title === undefined && ytOff.viewers === undefined, ytOff)
+    const [signedOut] = (await f([tw('x')])) as Info[]
+    check('Twitch while signed out -> an explanation', signedOut.live === false && /sign in/i.test(signedOut.note ?? ''), signedOut)
+    twitch = new Map([['x', { title: 'T', viewers: 1, game: '' }]])
+    check('empty category is left out', ((await f([tw('x')])) as Info[])[0].game === undefined)
+    const [yt, ytOff, ytBad] = await f([{ platform: 'youtube', source: '@a123' }, { platform: 'youtube', source: 'off' }, { platform: 'youtube', source: 'boom' }])
+    check('YouTube live -> title + viewers', (yt as Info).live === true && (yt as Info).title === 'Live now' && (yt as Info).viewers === 55)
+    check('YouTube offline -> no title, no viewers', (ytOff as Info).live === false && (ytOff as Info).title === undefined && (ytOff as Info).viewers === undefined, ytOff)
+    check('one YouTube failure is an Error for that channel only', ytBad instanceof Error && /429/.test(ytBad.message) && !(yt instanceof Error))
+    const failing = makeInfoFetcher({ twitchStreams: async () => { throw new Error('HTTP 401') }, youtubeStats: async () => ({ live: false }) })
+    const [t1, y1] = await failing([tw('x'), { platform: 'youtube', source: '@a123' }])
+    check('a Twitch failure is an Error and does not stop YouTube', t1 instanceof Error && !(y1 instanceof Error))
   }
 
   // ================================================================== YouTube watch page

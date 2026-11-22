@@ -1,37 +1,48 @@
 /**
- * renderer/src/store/streamInfoStore.ts   (title and viewers of the one stream being read)
+ * renderer/src/store/streamInfoStore.ts   (live status, title and viewers of the channels in the feed)
  *
- * WHAT: Holds the latest `StreamInfo` pushed by the main process (main/streaminfo.ts), and keeps the main process
- * told WHICH stream to follow: `useStreamInfoSync()` (called from App.tsx) works out the stream from the settings, the
- * channel list and the chosen title source (lib/streaminfo.ts) and sends it, or `null` when the setting is off or there
- * are no channels.
+ * WHAT: Holds the latest `StreamInfo` list pushed by the main process (main/streaminfo.ts), and keeps the main process told
+ * WHICH channels to check: `useStreamInfoSync()` (called from App.tsx) sends every channel in the feed. It also turns
+ * changes into notes in the chat ("#nightleaf went live: ...", "... went offline", "... changed the title: ...", see
+ * lib/streaminfo.ts `streamChanges`), and asks for a fresh check whenever the window gets focus again.
+ *
+ * The Settings checkbox "Show stream title and viewer count" only decides whether the bar above the chat is drawn; the
+ * checking itself always runs while there are channels, because the Channels menu and the notes need it.
  */
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { StreamInfo } from '../../../shared/types'
-import { streamInfoTarget } from '../lib/streaminfo'
+import { makeStreamNote } from '../lib/channelbreaks'
+import { channelKey, streamChanges, watchTargets } from '../lib/streaminfo'
 import { useChatStore } from './chatStore'
-import { useSettingsStore } from './settingsStore'
 
 interface StreamInfoStore {
-  info: StreamInfo | null
+  infos: StreamInfo[]
 }
 
-export const useStreamInfoStore = create<StreamInfoStore>(() => ({ info: null }))
+export const useStreamInfoStore = create<StreamInfoStore>(() => ({ infos: [] }))
 
 export function subscribeToStreamInfo(): () => void {
-  return window.api.streamInfo.onChange((info) => useStreamInfoStore.setState({ info }))
+  return window.api.streamInfo.onChange((infos) => {
+    const prev = useStreamInfoStore.getState().infos
+    useStreamInfoStore.setState({ infos })
+    const notes = streamChanges(prev, infos).map((c) => ({ kind: 'message' as const, message: makeStreamNote(c.info.platform, c.info.source, c.kind, c.info.title) }))
+    if (notes.length) useChatStore.getState().addItems(notes)
+  })
 }
 
-/** Tell the main process which single stream (if any) to follow, whenever that changes. */
+/** Tell the main process which channels to check, whenever the list changes; look again when the window is focused. */
 export function useStreamInfoSync(): void {
-  const show = useSettingsStore((s) => s.showStreamInfo)
   const channels = useChatStore((s) => s.channels)
-  const titleSource = useChatStore((s) => s.titleSource)
-  const target = streamInfoTarget(show, channels, titleSource)
-  const key = target ? `${target.platform}:${target.source}` : ''
+  const targets = watchTargets(channels)
+  const key = targets.map(channelKey).join('|')
   useEffect(() => {
-    void window.api.streamInfo.watch(target)
+    void window.api.streamInfo.watch(targets)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
+  useEffect(() => {
+    const again = () => void window.api.streamInfo.refresh()
+    window.addEventListener('focus', again)
+    return () => window.removeEventListener('focus', again)
+  }, [])
 }

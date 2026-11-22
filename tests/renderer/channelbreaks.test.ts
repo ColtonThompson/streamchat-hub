@@ -44,3 +44,18 @@ describe('channelBreaks', () => {
     expect(titles(channelBreaks('twitch', ['a'], []))).toEqual(['Left #a'])
   })
 })
+
+describe('stream notes', () => {
+  it('say what happened to the stream, and only "left" ones read as an ending', async () => {
+    const { makeStreamNote, isEndBreak } = await import('../../src/renderer/src/lib/channelbreaks')
+    const t = (k: 'live' | 'offline' | 'title') => makeStreamNote('twitch', 'nightleaf', k, 'New title').event?.title ?? ''
+    expect(t('live')).toBe('#nightleaf went live: New title')
+    expect(t('offline')).toBe('#nightleaf went offline')
+    expect(t('title')).toBe('#nightleaf changed the title: New title')
+    expect(makeStreamNote('twitch', 'a', 'live').event?.title).toBe('#a went live')
+    expect(makeStreamNote('twitch', 'a', 'live').event?.type).toBe('break')
+    expect(isEndBreak(t('offline'))).toBe(true)
+    expect(isEndBreak('Left #a')).toBe(true)
+    expect(isEndBreak(t('live'))).toBe(false)
+  })
+})
