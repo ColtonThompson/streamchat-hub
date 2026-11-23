@@ -1,6 +1,6 @@
 {
   "name": "streamchat-hub",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "One merged chat for every platform you stream to",
   "main": "./out/main/index.js",
   "scripts": {
