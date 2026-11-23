@@ -187,7 +187,8 @@ await scenario('YouTube adapter (against a fake YouTube)', async (check) => {
   await adapter.connect()
   await new Promise((r) => realST(r, 60))
   check('offline handle: connected + "waiting" tooltip', statuses.some((s) => s.state === 'connected' && /waiting for @streamer to go live/.test(s.detail)), statuses)
-  await new Promise((r) => realST(r, 700))
+  // Wait until the fake chat has run to its end (not a fixed time: a slow CI machine needs longer than a laptop).
+  for (let i = 0; i < 100 && !/ended/.test(statuses[statuses.length - 1]?.detail ?? ''); i++) await new Promise((r) => realST(r, 50))
   check('goes live: title shown in status', statuses.some((s) => s.state === 'connected' && s.detail.includes('Tom & Jerry LIVE')), statuses)
   check('history shown once; new messages in order; deletion after its message', events.join() === 'msg:h1,msg:n1,msg:n2,mod:n1,msg:n3', events)
   check('super chat survives end-to-end', msgs.find((m) => m.id === 'n2')?.meta?.superChat?.label === '$5.00')
